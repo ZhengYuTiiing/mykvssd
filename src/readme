@@ -1,0 +1,51 @@
+这是我自己的KVSSD，想把学习索引加上去
+目前的架构是这样的
+KVSSD是整个模拟器，
+Constants中配置参数的大小（memtable大小，sstable大小，page大小，lsmtree每层的阈值，文件存的地方）
+KVWorkloadRunner是只指定一个csv文件运行，直接输出到终端
+Runner是指定多个csv文件运行，输出到kv_workload_results目录下
+NewGenerator生成的csv文件规定了，读的全部都是写过的key
+
+
+
+使用方法：
+首先在根目录下编译：
+javac -d classes src/com/ssd/*.java
+
+生成csv文件（需要csv4这个目录已经存在）
+java -cp classes com.ssd.NewGenerator --output csv4/kvssd.csv --ops 16304 --numKeys 50000 --readRatio 0.5 --keySize 16 --valSize 4096 --keyDist uniform
+只指定一个csv文件运行，直接输出到终端
+java -cp classes com.ssd.KVWorkloadRunner csv4/kvssd.csv
+指定多个csv文件运行，输出到kv_workload_results目录下
+java -cp classes com.ssd.Runner ./csv/cache.csv ./csv/cache15.csv ./csv/crypto1.csv ./csv/crypto2.csv ./csv/dedup.csv ./csv/etc.csv ./csv/kvssd.csv ./csv/rtdata.csv ./csv/udb.csv ./csv/var.csv ./csv/w-pink.csv ./csv/xbox.csv ./csv/ycsb.csv ./csv/zippydb.csv
+
+
+这14个是32MB，只有两层LSM-Tree
+ # 1. KVSSD
+ java -cp classes com.ssd.NewGenerator --output csv/kvssd.csv --ops 16304 --numKeys 50000 --readRatio 0.5 --keySize 16 --valSize 4096 --keyDist uniform
+ # 2. YCSB
+ java -cp classes com.ssd.NewGenerator --output csv/ycsb.csv --ops 65536 --numKeys 81920 --readRatio 0.5 --keySize 20 --valSize 1000 --keyDist uniform
+ # 3. W-PinK
+ java -cp classes com.ssd.NewGenerator --output csv/w-pink.csv --ops 63312 --numKeys 79140 --readRatio 0.5 --keySize 32 --valSize 1024 --keyDist uniform
+ # 4. Xbox
+ java -cp classes com.ssd.NewGenerator --output csv/xbox.csv --ops 51704 --numKeys 64630 --readRatio 0.5 --keySize 94 --valSize 1200 --keyDist uniform
+ # 5. ETC
+ java -cp classes com.ssd.NewGenerator --output csv/etc.csv --ops 166524 --numKeys 208150 --readRatio 0.5 --keySize 41 --valSize 358 --keyDist uniform
+ # 6. UDB
+ java -cp classes com.ssd.NewGenerator --output csv/udb.csv --ops 422070 --numKeys 527590 --readRatio 0.5 --keySize 27 --valSize 128 --keyDist uniform
+ # 7. Cache
+ java -cp classes com.ssd.NewGenerator --output csv/cache.csv --ops 286800 --numKeys 358490 --readRatio 0.5 --keySize 42 --valSize 188 --keyDist uniform
+ # 8. VAR
+ java -cp classes com.ssd.NewGenerator --output csv/var.csv --ops 435772 --numKeys 544710 --readRatio 0.5 --keySize 35 --valSize 115 --keyDist uniform
+ # 9. Crypto2
+ java -cp classes com.ssd.NewGenerator --output csv/crypto2.csv --ops 444430 --numKeys 555540 --readRatio 0.5 --keySize 37 --valSize 110 --keyDist uniform
+ # 10. Dedup
+ java -cp classes com.ssd.NewGenerator --output csv/dedup.csv --ops 986896 --numKeys 1233620 --readRatio 0.5 --keySize 20 --valSize 44 --keyDist uniform
+ # 11. Cache15
+ java -cp classes com.ssd.NewGenerator --output csv/cache15.csv --ops 838860 --numKeys 1048580 --readRatio 0.5 --keySize 38 --valSize 38 --keyDist uniform
+ # 12. ZippyDB
+ java -cp classes com.ssd.NewGenerator --output csv/zippydb.csv --ops 706410 --numKeys 883010 --readRatio 0.5 --keySize 48 --valSize 43 --keyDist uniform
+ # 13. Crypto1
+ java -cp classes com.ssd.NewGenerator --output csv/crypto1.csv --ops 516222 --numKeys 645280 --readRatio 0.5 --keySize 76 --valSize 50 --keyDist uniform
+ # 14. RTDATA
+ java -cp classes com.ssd.NewGenerator --output csv/rtdata.csv --ops 1766024 --numKeys 220753
