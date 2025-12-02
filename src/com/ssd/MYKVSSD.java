@@ -34,6 +34,7 @@ public class MYKVSSD {
     private int nextModelId;
     private List<SSTable> sstables;
     private Stats stats;
+    private KeyRangeComparator keyrangeComparator=new KeyRangeComparator();
 
     // ==================== 构造函数与初始化（含持久化加载）====================
     public MYKVSSD() {
@@ -518,10 +519,209 @@ public class MYKVSSD {
         while (!immutableMemtables.isEmpty()) {
             List<Pair<String, String>> immMem = immutableMemtables.poll();
             createNodeModelWritetoPage(immMem, 0);
-           // checkLevelCompaction(0);
+            checkLevelCompaction(0);
+        }
+    }
+    private int getLevelSstLimit(int level) {
+        if (level < Constants.LEVEL_SST_COUNT_LIMITS.length) {
+            return Constants.LEVEL_SST_COUNT_LIMITS[level];
+        }
+        return Constants.LEVEL_SST_COUNT_LIMITS[Constants.LEVEL_SST_COUNT_LIMITS.length - 1];
+    }
+    private void checkLevelCompaction(int level) {
+        List<SSTable> currentLevelSsts = lsmLevels.getOrDefault(level, new ArrayList<>());
+        int levelSstLimit = getLevelSstLimit(level);
+        while (!currentLevelSsts.isEmpty() && currentLevelSsts.size() > levelSstLimit) {
+            System.out.println("=== 触发层级 " + level + " 的 Compaction ===");
+            System.out.println("当前数量：" + currentLevelSsts.size() + "，阈值：" + levelSstLimit);
+            int excess=currentLevelSsts.size()-levelSstLimit;
+            List<SSTable> victimSsts = new ArrayList<>();
+            for (int i = 0; i < excess; i++) {
+                victimSsts.add(currentLevelSsts.get(i)); // 取前excess个作为victim（超出多少选多少）
+            }
+            List<SSTable> targetLevelSsts = lsmLevels.get(level + 1);
+            List<SSTable> overlappingSsts = new ArrayList<>();
+            overlappingSsts.addAll(victimSsts);
+            if(targetLevelSsts!=null){
+                for (SSTable targetSst : targetLevelSsts) {
+                    // 检查目标SST是否与任何一个victim重叠
+                    boolean isOverlapping = false;
+                    for (SSTable victim : victimSsts) {
+                        Pair<String, String> victimKeyRange = new Pair<>(victim.keyMin, victim.keyMax);
+                        Pair<String, String> targetKeyRange = new Pair<>(targetSst.keyMin, targetSst.keyMax);
+                        if (keyrangeComparator.isOverlapping(victimKeyRange, targetKeyRange)) {
+                            isOverlapping = true;
+                            break;
+                        }
+                    }
+                    if (isOverlapping) {
+                        overlappingSsts.add(targetSst); // 加入所有重叠的目标SST
+                    }
+                }
+            }
+            //TODO -  Compaction
+            RunCompaction(level, overlappingSsts);
+            currentLevelSsts = lsmLevels.getOrDefault(level, new ArrayList<>());
+            checkLevelCompaction(level + 1); // 检查下一层是否因新增超阈值
+        }
+
+    }
+    private void RunCompaction(int sourceLevel, List<SSTable> overlappingSsts) {
+        System.out.println("=== 触发层级 " + sourceLevel + " 的 Compaction ===");
+        int targetLevel = sourceLevel + 1;
+        List<Segment> uniqueSegments = new ArrayList<>();
+        for (SSTable sst : overlappingSsts) {
+             List<Segment> model = sst.model_prt;
+             for (Segment segment : model) {
+                 if (!uniqueSegments.contains(segment)) {
+                    uniqueSegments.add(segment);
+                 }
+             }
+        }
+        //sort segments by key
+        uniqueSegments.sort(Comparator.comparing(s -> s.minKeyNum));
+        List<SSTable> newSsts = SplitIntoNonOverlappingSsts(uniqueSegments, targetLevel);
+
+        // 2. 标记原 SSTable 为无效（业务逻辑：原 SSTable 不再参与查询）
+        for(SSTable sst:overlappingSsts){
+            markSSTInvalid(sst);
+            deleteModelFile(sst.modelId);
+        }
+        List<SSTable> temp=lsmLevels.getOrDefault(targetLevel, new ArrayList<>());
+
+
+        for(SSTable sst:newSsts){
+            temp.add(sst);
+        }
+        temp.sort(Comparator.comparing(s -> s.keyMin));
+        lsmLevels.put(targetLevel, temp);
+        // 5. 对合并后的所有SSTable按keyRange.first（keyMin）升序排序
+
+
+        // 其余持久化等逻辑保持不变.
+        //TODO 存model
+        try {
+            for(SSTable sst:newSsts){
+                saveSSTableToFile(sst);
+                saveModelToFile(sst.modelId,sst.model_prt);
+            }
+        } catch (IOException e) {
+            // System.err.printf("持久化新 SST[%d] 失败：%s%n", sst.sstId, e.getMessage());
+        }
+//        for(SSTable sst:newSsts){
+//            System.out.println("add sstable: "+sst.sstId);
+//        }
+        // 更新目标层级列表到lsmLevels
+        // newSsts.sort(Comparator.comparing(s -> s.keyRange.first));
+        // lsmLevels.put(targetLevel, newSsts);
+
+        //new
+        // 合并新SSTable到目标层级（新老数据一起处理）
+    }
+    private void markSSTInvalid(SSTable sst) {
+        if (sst == null) return;
+
+        // 1. 从 LSM 层级移除
+        List<SSTable> ssts = lsmLevels.get(sst.level);
+        if (ssts != null) {
+            ssts.remove(sst);
+            if (ssts.isEmpty()) {
+                lsmLevels.remove(sst.level);
+            }
+        }
+
+        // 4. 持久化变更（物理块元数据、键范围树）并删除无效 SST 文件
+        try {
+            // 找到 SST 关联的物理块并持久化
+            for (PhysicalBlock block : physicalBlocks.values()) {
+                if (block.sstables.contains(sst.sstId)) {
+                    block.sstables.remove(sst.sstId);
+                }
+            }
+            // 删除无效 SST 的文件
+            deleteSstFile(sst.sstId);
+            // 重写 LSM 层级文件
+            saveLsmLevelsToDisk();
+        } catch (IOException e) {
+            System.err.println("Failed to persist after marking SST invalid: " + e.getMessage());
+        }
+    }
+        private void deleteModelFile(long modelId) {
+            try {
+                Files.createDirectories(Paths.get(Constants.MODEL_DIR));
+                java.nio.file.Path modelPath = Paths.get(Constants.MODEL_DIR + "model_" + modelId + ".mdl");
+                Files.deleteIfExists(modelPath);
+            } catch (IOException e) {
+                System.err.println("Failed to delete SST file sst_" + modelId + ".sst: " + e.getMessage());
+            }
+        }
+    /**
+     * 删除指定 SST 的明文文件（如果存在）。
+     */
+    private void deleteSstFile(long sstId) {
+        try {
+            Files.createDirectories(Paths.get(Constants.SST_DIR));
+            java.nio.file.Path sstPath = Paths.get(Constants.SST_DIR + "sst_" + sstId + ".sst");
+            Files.deleteIfExists(sstPath);
+        } catch (IOException e) {
+            System.err.println("Failed to delete SST file sst_" + sstId + ".sst: " + e.getMessage());
         }
     }
 
+    private List<SSTable> SplitIntoNonOverlappingSsts(List<Segment> segments, int targetLevel) {
+        List<SSTable> newSsts = new ArrayList<>();
+        List<Segment> currentGroup = new LinkedList<>();
+        int maxSegmentsPerSst = 1;
+        int currentCount = 0;
+        for (int i = 0; i < segments.size(); i++) {
+            Segment segment = segments.get(i);
+            currentGroup.add(segment);
+            currentCount++;
+            boolean needSplit = currentCount >= maxSegmentsPerSst || i == segments.size() - 1;
+            if (needSplit){
+                List<Segment> sharedSegments = new LinkedList<>();
+                // 只有当不是最后一个元素时，才检查下一个segment
+                if (i < segments.size() - 1) {
+                    Segment next = segments.get(i + 1);
+                    String nextMinKey = "user" + next.minKeyNum;
+                    long nextMinKeyNum = next.minKeyNum;
+
+                    for (Segment seg : currentGroup) {
+                        if (seg.maxKeyNum > nextMinKeyNum) {
+                            sharedSegments.add(seg);
+                        }
+                    }
+                }
+
+                SSTable newSst = new SSTable(nextSstId++, targetLevel);
+                List<Segment> newSegments = new ArrayList<>();
+                for (Segment seg : currentGroup) {
+                    newSegments.add(seg);
+                }
+                // 4.3 计算新SSTable的键范围（论文3.C：SSTable键范围=所有KV页键范围的并集）
+                newSst.keyMin = "user" + newSegments.get(0).minKeyNum;
+                newSegments.sort(Comparator.comparing(s -> s.maxKeyNum));
+                newSst.keyMax = "user" + newSegments.get(newSegments.size() - 1).maxKeyNum;
+                 newSst.setModel_prt(newSegments);
+                 newSst.modelId = nextModelId++;
+                 newSsts.add(newSst);
+                 currentGroup.clear();
+                 //TODO 持久化到 文件
+            // 8. 核心改造：持久化 SSTable 和物理块元数据
+                try {
+                    saveSSTableToFile(newSst);
+                    saveModelToFile(newSst.modelId,newSst.model_prt);
+                } catch (IOException e) {
+                    System.err.println("Failed to persist SSTable/block: " + e.getMessage());
+                }
+                 for (Segment seg : sharedSegments) {
+                    currentGroup.add(seg);
+                }
+                 currentCount = 0;
+            }
+        }
+        return newSsts;
+    }
     public void createNodeModelWritetoPage(List<Pair<String, String>> memtable, int level) {
         SSTable sst = new SSTable(nextSstId++, level);
         // 1. Memtable 排序 - 修改为基于数值的排序
@@ -1818,7 +2018,29 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
 //            System.out.println("Read fail!");
 //        }
 //    }
+    class KeyRangeComparator {
+        // 1. 比较两个String键的大小（返回-1: a<b，0:a==b，1:a>b）
+        public int compare(String a, String b) {
+            return a.compareTo(b);
+        }
 
+        // 2. 判断两个键范围（Pair<String, String>）是否重叠（论文3.C核心逻辑：重叠则需合并）
+        // 入参：r1、r2 - 键范围，格式为 Pair<最小键, 最大键>
+        // 逻辑：仅当“r1的最大键 < r2的最小键”或“r2的最大键 < r1的最小键”时无重叠，否则重叠
+        public boolean isOverlapping(Pair<String, String> r1, Pair<String, String> r2) {
+            // 先获取两个范围的最小键和最大键（确保Pair的第一个元素是最小键，第二个是最大键，论文3.B）
+            String r1Min = r1.first;   // r1的最小键
+            String r1Max = r1.second; // r1的最大键
+            String r2Min = r2.first;   // r2的最小键
+            String r2Max = r2.second; // r2的最大键
+
+            // 论文3.A重叠判断逻辑：排除“完全不重叠”的两种情况，剩余为重叠
+            boolean noOverlapCase1 = compare(r1Max, r2Min) < 0; // r1的最大键 < r2的最小键
+            boolean noOverlapCase2 = compare(r2Max, r1Min) < 0; // r2的最大键 < r1的最小键
+
+            return !(noOverlapCase1 || noOverlapCase2); // 非“完全不重叠”即“重叠”
+        }
+    }
 
     private static List<Pair<String,String>> generateKVData() {
         List<Pair<String,String>> kvs = new ArrayList<>();
@@ -1852,16 +2074,16 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
         MYKVSSD kvssd = new MYKVSSD();
 //        // 测试多个key的读取操作
 //        String[] testKeys = {
-//                "user4271446884475985485",
-//                "user7560551397372881313",
-//                "user9220313212480853884",
-//                "user3554452120216789914",
-//                "user7031619715693038336",
-//                "user9222805626210537066",
-//                "user74976165881714043",
-//                "user19993183444263",
-//                "user2772480288009256167",
-//                "user9205935967965937313",
+//                "user292713126068779000",
+//                "user718011042563105175",
+//                "user1498413614602006438",
+//                "user6767619306422110467",
+//                "user9062295983798595795",
+//                "user666363271010298725",
+//                "user1610487139809764312",
+//                "user3393528578134494861",
+//                "user9132804061154425932",
+//                "user227058404529001044",
 //        };
 //
 //        int successCount = 0;
@@ -1876,6 +2098,8 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
 //        }
 //
 //        System.out.println("读取测试完成，成功读取 " + successCount + "/" + testKeys.length + " 条数据");
+
+
         Runtime.getRuntime().addShutdownHook(new Thread(kvssd::shutdown));
         try {
 

@@ -21,7 +21,7 @@ public class Constants {
     // 按层的 SSTable 数量上限（仅用于“按个数触发”策略）。
     // 下标=层级，值=该层允许的最大 SSTable 个数。超出即触发向下一层压缩。
     public static final int[] LEVEL_SST_COUNT_LIMITS = new int[]{
-            10,  // L0 上限
+            1,  // L0 上限
             10,  // L1 上限
             100,  // L2 上限
             1000, // L3 上限
@@ -30,7 +30,7 @@ public class Constants {
     };
 
     // 新增：持久化路径（确保程序有权限读写）
-    public static String PERSIST_DIR = "./data1/testOOB/"; // 总持久化目录
+    public static String PERSIST_DIR = "./data1/testCompact/"; // 总持久化目录
     public static final String SST_DIR = PERSIST_DIR + "ssts/";   // SSTable 存储目录
     public static final String BLOCK_META_DIR = PERSIST_DIR + "block_meta/"; // 物理块元数据目录
     public static final String SST_META_SUFFIX = ".txt";         // SSTable 元数据文件后缀
