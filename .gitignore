@@ -29,6 +29,8 @@ bin/
 .DS_Store
 
 csv/
+csv2/
+csv3/
 data1/
 data2/
 kv_worload_results/

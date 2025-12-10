@@ -4,6 +4,11 @@ import java.util.regex.Pattern;
  * 常量定义（含持久化路径）
  */
 public class Constants {
+    // Define flash operation timing constants
+    public static final int FLASH_PAGE_READ_TIME_NS = 120000;    // 120 microseconds
+    public static final int FLASH_PAGE_WRITE_TIME_NS = 320000;   // 320 microseconds
+    public static final int FLASH_BLOCK_ERASE_TIME_NS = 3000000; // 3 milliseconds
+
     // 原有的模拟器常量
     public static final int PAGE_SIZE = 32 * 1024;       // 32KB 页大小
     public static final long BLOCK_SIZE = 4 * 1024 * 1024; // 4MB 块大小
@@ -30,20 +35,20 @@ public class Constants {
     };
 
     // 新增：持久化路径（确保程序有权限读写）
-    public static String PERSIST_DIR = "./data1/testCompact/"; // 总持久化目录
-    public static final String SST_DIR = PERSIST_DIR + "ssts/";   // SSTable 存储目录
-    public static final String BLOCK_META_DIR = PERSIST_DIR + "block_meta/"; // 物理块元数据目录
+    public static String PERSIST_DIR = "./data2/kvssd_kvssd_data/"; // 总持久化目录
+    public static String SST_DIR = PERSIST_DIR + "ssts/";   // SSTable 存储目录
+    public static  String BLOCK_META_DIR = PERSIST_DIR + "block_meta/"; // 物理块元数据目录
     public static final String SST_META_SUFFIX = ".txt";         // SSTable 元数据文件后缀
     public static final String BLOCK_META_SUFFIX = ".txt";     // 物理块元数据文件后缀
-    public static final String KEY_RANGE_TREE_FILE = PERSIST_DIR + "key_range_tree.dat"; // 键范围树文件
-    public static final String MEMTABLE_FILE = PERSIST_DIR + "memtable.data";
+    public static  String KEY_RANGE_TREE_FILE = PERSIST_DIR + "key_range_tree.dat"; // 键范围树文件
+    public static  String MEMTABLE_FILE = PERSIST_DIR + "memtable.data";
     // LSM层级元数据持久化路径
-    public static final String LSM_LEVELS_FILE = PERSIST_DIR + "lsm_levels.data";
-    public static final String MODEL_DIR = PERSIST_DIR + "models/";
+    public static  String LSM_LEVELS_FILE = PERSIST_DIR + "lsm_levels.data";
+    public static  String MODEL_DIR = PERSIST_DIR + "models/";
     // 元数据区配置（独立于数据区）
     public static final long META_ZONE_BLOCK_COUNT = 1000; // 元数据区占用10个块
-    public static final String META_BLOCK_META_DIR = PERSIST_DIR + "meta_blocks/"; // 元数据区块元数据目录
-    public static final String BLOCK_DIR = PERSIST_DIR + "blocks/";
+    public static  String META_BLOCK_META_DIR = PERSIST_DIR + "meta_blocks/"; // 元数据区块元数据目录
+    public static  String BLOCK_DIR = PERSIST_DIR + "blocks/";
 
     public static final int MAX_ERROR = 1 * PAGE_SIZE; // 最大允许误差：3个页（96KB）
     public static final Pattern USER_PATTERN = Pattern.compile("user(\\d+)");

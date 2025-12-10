@@ -1,5 +1,6 @@
 package com.ssd;
 
+
 import java.io.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -34,11 +35,12 @@ public class MYKVSSD {
     private int nextModelId;
     private List<SSTable> sstables;
     private Stats stats;
+    private int flashAccess;
     private KeyRangeComparator keyrangeComparator=new KeyRangeComparator();
 
     // ==================== 构造函数与初始化（含持久化加载）====================
     public MYKVSSD() {
-        this(15L * 1024 * 1024 ); // 默认 15GB 容量
+        this(15L * 1024 * 1024* 1024 ); // 默认 15GB 容量
     }
     public MYKVSSD(long totalCapacity) {
         // 初始化内存结构
@@ -52,6 +54,7 @@ public class MYKVSSD {
         this.nextPageNo = 0;
         this.nextModelId = 1;
         this.stats = new Stats();
+        this.flashAccess=0;
 
 
         for (int i = 0; i < 10; i++) { // 初始化 LSM 层级容量
@@ -59,11 +62,11 @@ public class MYKVSSD {
         }
         // 初始化物理块（优先从磁盘加载，无则新建）
         this.totalBlocks = totalCapacity / Constants.BLOCK_SIZE;
-        
+
         // 从磁盘加载持久化数据（SSTable、block、page键范围树）
         //TODO: 从磁盘加载SSTable、block、page键范围;memtable,lsmtree,physicalBlocks都好了
-         loadPersistedData();
-         initPhysicalBlocksFromDisk( totalBlocks);
+        loadPersistedData();
+        initPhysicalBlocksFromDisk( totalBlocks);
 
 //        System.out.println("KVSSD_persistence initialized: " +
 //                "totalBlocks=" + totalBlocks + ", " +
@@ -505,7 +508,7 @@ public class MYKVSSD {
             memtable.add(new Pair<>(key, value));
         }
     }
-     // 刷盘 Memtable 到 LSM 层级（原有逻辑保留，先删旧键避免重复）
+    // 刷盘 Memtable 到 LSM 层级（原有逻辑保留，先删旧键避免重复）
 
     public void flushMemtable(){
         // 1. 检查 Memtable 是否为空
@@ -571,12 +574,12 @@ public class MYKVSSD {
         int targetLevel = sourceLevel + 1;
         List<Segment> uniqueSegments = new ArrayList<>();
         for (SSTable sst : overlappingSsts) {
-             List<Segment> model = sst.model_prt;
-             for (Segment segment : model) {
-                 if (!uniqueSegments.contains(segment)) {
+            List<Segment> model = sst.model_prt;
+            for (Segment segment : model) {
+                if (!uniqueSegments.contains(segment)) {
                     uniqueSegments.add(segment);
-                 }
-             }
+                }
+            }
         }
         //sort segments by key
         uniqueSegments.sort(Comparator.comparing(s -> s.minKeyNum));
@@ -646,15 +649,15 @@ public class MYKVSSD {
             System.err.println("Failed to persist after marking SST invalid: " + e.getMessage());
         }
     }
-        private void deleteModelFile(long modelId) {
-            try {
-                Files.createDirectories(Paths.get(Constants.MODEL_DIR));
-                java.nio.file.Path modelPath = Paths.get(Constants.MODEL_DIR + "model_" + modelId + ".mdl");
-                Files.deleteIfExists(modelPath);
-            } catch (IOException e) {
-                System.err.println("Failed to delete SST file sst_" + modelId + ".sst: " + e.getMessage());
-            }
+    private void deleteModelFile(long modelId) {
+        try {
+            Files.createDirectories(Paths.get(Constants.MODEL_DIR));
+            java.nio.file.Path modelPath = Paths.get(Constants.MODEL_DIR + "model_" + modelId + ".mdl");
+            Files.deleteIfExists(modelPath);
+        } catch (IOException e) {
+            System.err.println("Failed to delete SST file sst_" + modelId + ".sst: " + e.getMessage());
         }
+    }
     /**
      * 删除指定 SST 的明文文件（如果存在）。
      */
@@ -702,22 +705,22 @@ public class MYKVSSD {
                 newSst.keyMin = "user" + newSegments.get(0).minKeyNum;
                 newSegments.sort(Comparator.comparing(s -> s.maxKeyNum));
                 newSst.keyMax = "user" + newSegments.get(newSegments.size() - 1).maxKeyNum;
-                 newSst.setModel_prt(newSegments);
-                 newSst.modelId = nextModelId++;
-                 newSsts.add(newSst);
-                 currentGroup.clear();
-                 //TODO 持久化到 文件
-            // 8. 核心改造：持久化 SSTable 和物理块元数据
+                newSst.setModel_prt(newSegments);
+                newSst.modelId = nextModelId++;
+                newSsts.add(newSst);
+                currentGroup.clear();
+                //TODO 持久化到 文件
+                // 8. 核心改造：持久化 SSTable 和物理块元数据
                 try {
                     saveSSTableToFile(newSst);
                     saveModelToFile(newSst.modelId,newSst.model_prt);
                 } catch (IOException e) {
                     System.err.println("Failed to persist SSTable/block: " + e.getMessage());
                 }
-                 for (Segment seg : sharedSegments) {
+                for (Segment seg : sharedSegments) {
                     currentGroup.add(seg);
                 }
-                 currentCount = 0;
+                currentCount = 0;
             }
         }
         return newSsts;
@@ -747,9 +750,9 @@ public class MYKVSSD {
             System.err.println("Failed to split memtable into pages");
             return;
         }
-       // System.out.println("2 block page size: " + block.pages.size());
-       // block.pages.addAll(kvPages);
-       // System.out.println("3 block page size: " + block.pages.size());
+        // System.out.println("2 block page size: " + block.pages.size());
+        // block.pages.addAll(kvPages);
+        // System.out.println("3 block page size: " + block.pages.size());
         writeKeyAddrFile(sortedMemtable);
         //3.训练出model
         List<Segment> model = dynamicSegmentation(block.pages);
@@ -1025,7 +1028,7 @@ public class MYKVSSD {
             }
         }
     }
-    
+
     private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
         List<Segment> segments = new ArrayList<>();
         if (pages.isEmpty()) return segments;
@@ -1099,7 +1102,7 @@ public class MYKVSSD {
             if (pageSizeUsed + kvSize > Constants.PAGE_SIZE) {
                 // 当前页已满，需要创建新页
                 if (!currentPage.data.isEmpty()) {
-                   //currentPage.updateKeyRange();
+                    //currentPage.updateKeyRange();
                     int pageNo = Integer.parseInt(currentPage.ppa.split("_")[1]);
                     if (block.addPage(pageNo, currentPage)) {
                         pages.add(currentPage);
@@ -1221,7 +1224,7 @@ public class MYKVSSD {
                     physicalBlocks.put(blockId, newBlock);
                     freeBlocks.add(blockId);
                     // 持久化新块的初始元数据（明文格式）
-                   // savePhysicalBlockToFile(newBlock);
+                    // savePhysicalBlockToFile(newBlock);
                 }
             }
         } catch (IOException e) {
@@ -1328,7 +1331,7 @@ public class MYKVSSD {
                                     String minKey = keyRangeParts[0];
                                     String maxKey = keyRangeParts[1];
                                     // 可以将这些信息存储到 currentPage 的某个字段中
-                                   // currentPage.neighborKeyRanges.put(pageIdentifier, new Pair<>(minKey, maxKey));
+                                    // currentPage.neighborKeyRanges.put(pageIdentifier, new Pair<>(minKey, maxKey));
                                     System.out.println("Loaded neighbor key range: " + pageIdentifier +
                                             " -> [" + minKey + ", " + maxKey + "]");
                                 }
@@ -1356,7 +1359,7 @@ public class MYKVSSD {
     public void runGarbageCollection() {
 
     }
-//    public String get(String key) {
+    //    public String get(String key) {
 //       // System.out.println("1111");
 //        stats.readCount++;
 //        // 1. 查活跃 Memtable
@@ -1463,128 +1466,201 @@ public class MYKVSSD {
 //        return null;
 //    }
     public String get(String key) {
-    stats.readCount++;
-    // 1. 查活跃 Memtable
-    synchronized (memtable) {
-        for (Pair<String, String> kv : memtable) {
-            if (kv.first.equals(key)) {
-                return kv.second;
+        int flashAccess = 0;
+        stats.readCount++;
+        // 1. 查活跃 Memtable
+        synchronized (memtable) {
+            for (Pair<String, String> kv : memtable) {
+                if (kv.first.equals(key)) {
+                    return kv.second;
+                }
             }
         }
-    }
-    // 2. 查不可变 Memtable
-    for (List<Pair<String, String>> immMem : immutableMemtables) {
-        for (Pair<String, String> kv : immMem) {
-            if (kv.first.equals(key)) {
-                return kv.second;
+        // 2. 查不可变 Memtable
+        for (List<Pair<String, String>> immMem : immutableMemtables) {
+            for (Pair<String, String> kv : immMem) {
+                if (kv.first.equals(key)) {
+                    return kv.second;
+                }
             }
         }
-    }
-    // 3. 查 LSM 树（SSTable）
-    for (int i=0;i<lsmLevels.size();i++) {
-        List<SSTable> Ssts = lsmLevels.get(i);
-        if (Ssts == null || Ssts.isEmpty()) {
-            continue;
-        }
-        // 2. 遍历当前层级的SSTable（已按键范围起始值升序排列，利用不重叠特性优化）
-        for (SSTable sst : Ssts) {
-
-            // 2.1 目标键 < 当前SSTable的起始键：后续SSTable起始键更大，直接跳出该层级
-            // 修改SSTable键范围比较逻辑，使用数值比较
-//            if (parseKeyNum(key) < parseKeyNum(sst.keyMin))
-//                break;
-
-            // 2.2 目标键 > 当前SSTable的结束键：继续检查下一个SSTable
-            if (parseKeyNum(key) > parseKeyNum(sst.keyMax)) {
+        // 3. 查 LSM 树（SSTable）
+        for (int i=0;i<lsmLevels.size();i++) {
+            List<SSTable> Ssts = lsmLevels.get(i);
+            if (Ssts == null || Ssts.isEmpty()) {
                 continue;
             }
-            System.out.println("target key hit sst: " + sst.sstId);
-            List<Segment> model = sst.model_prt;
+            // 2. 遍历当前层级的SSTable（已按键范围起始值升序排列，利用不重叠特性优化）
+            for (SSTable sst : Ssts) {
 
-            for (Segment seg : model) {
-                long keyNum = parseKeyNum(key);
-                // 使用模型预测地址
-                Long predictedAddr = seg.predictAddr(keyNum);
-                if (predictedAddr != null) {
-                    // 根据PPA解析块ID和页号
-                    long blockId = predictedAddr / Constants.BLOCK_SIZE;
-                    long pageOffset = predictedAddr % Constants.BLOCK_SIZE;
-                    int pageNo = (int) (pageOffset / Constants.PAGE_SIZE);
-                    System.out.println("predicted ppa: " + blockId+"_"+pageNo);
-                    // 构造文件路径：BLOCK_META_DIR/blockId/pageNo.txt
-                    String pageFilePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
-                    File pageFile = new File(pageFilePath);
-                    System.out.println("page file path: " + pageFilePath);
-                    // 从文件中读取数据
-                    if (pageFile.exists()) {
-                        String value = readFromPageFile(pageFile, key);
-                        if (value != null) {
-                            return value; // 在预测页找到key
-                        }
-                        System.out.println("predicted page file not found,searching neighbor pages.");
-                         value = readFromNeighborPages(pageFile, key, blockId, pageNo);
-                        // 如果在预测页未找到，检查相邻页
-                        if(value != null){
-                            return value;
+                // 2.1 目标键 < 当前SSTable的起始键：后续SSTable起始键更大，直接跳出该层级
+                // 修改SSTable键范围比较逻辑，使用数值比较
+                if (parseKeyNum(key) < parseKeyNum(sst.keyMin))
+                    break;
+
+                // 2.2 目标键 > 当前SSTable的结束键：继续检查下一个SSTable
+                if (parseKeyNum(key) > parseKeyNum(sst.keyMax)) {
+                    continue;
+                }
+                // System.out.println("target key hit sst: " + sst.sstId);
+                List<Segment> model = sst.model_prt;
+
+                for (Segment seg : model) {
+                    long keyNum = parseKeyNum(key);
+                    // 使用模型预测地址
+                    Long predictedAddr = seg.predictAddr(keyNum);
+                    if (predictedAddr != null) {
+                        // 根据PPA解析块ID和页号
+                        long blockId = predictedAddr / Constants.BLOCK_SIZE;
+                        long pageOffset = predictedAddr % Constants.BLOCK_SIZE;
+                        int pageNo = (int) (pageOffset / Constants.PAGE_SIZE);
+                        //     System.out.println("predicted ppa: " + blockId+"_"+pageNo);
+                        // 构造文件路径：BLOCK_META_DIR/blockId/pageNo.txt
+                        String pageFilePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
+                        File pageFile = new File(pageFilePath);
+                        //   System.out.println("page file path: " + pageFilePath);
+                        // 从文件中读取数据
+                        if (pageFile.exists()) {
+                            String value = readFromPageFile(pageFile, key);
+                            if (value != null) {
+                                return value; // 在预测页找到key
+                            }
+                            //    System.out.println("predicted page file not found,searching neighbor pages.");
+                            value = readFromNeighborPages(pageFile, key, blockId, pageNo);
+                            // 如果在预测页未找到，检查相邻页
+                            if(value != null){
+                                return value;
+                            }
                         }
                     }
                 }
             }
         }
+        updateReadStats(flashAccess);
+        // 4. 未找到
+        return null;
     }
-    // 4. 未找到
-    return null;
-}
 
-/**
- * 从指定页面文件读取数据
- */
-private String readFromPageFile(File pageFile, String targetKey) {
-    try (BufferedReader reader = new BufferedReader(new FileReader(pageFile))) {
-        boolean inKvPairs = false;
-        String line;
+    public Stats getStats() {
+        Stats copy = new Stats();
+        copy.writeCount = stats.writeCount;
+        copy.readCount = stats.readCount;
+        copy.gcCount = stats.gcCount;
+        copy.compactionCount = stats.compactionCount;
+        copy.writeAmplification = stats.writeAmplification;
+        copy.totalFlashWrites = stats.totalFlashWrites;
+        copy.totalFlashReads = stats.totalFlashReads;
+        copy.read0Flash = stats.read0Flash;
+        copy.read1Flash = stats.read1Flash;
+        copy.read2Flash = stats.read2Flash;
+        copy.read3Flash = stats.read3Flash;
+        copy.read4Flash = stats.read4Flash;
+        copy.read5Flash = stats.read5Flash;
+        copy.read6Flash = stats.read6Flash;
+        copy.read7Flash = stats.read7Flash;
+        copy.read8Flash = stats.read8Flash;
+        copy.readMoreFlash = stats.readMoreFlash;
+        return copy;
+    }
+    private void updateReadStats(int flashAccess) {
+        if (flashAccess == 0) {
+            stats.read0Flash++;
+        } else if (flashAccess == 1) {
+            stats.read1Flash++;
+        } else if (flashAccess == 2) {
+            stats.read2Flash++;
+        } else if (flashAccess == 3) {
+            stats.read3Flash++;
+        } else if (flashAccess == 4) {
+            stats.read4Flash++;
+        } else if (flashAccess == 5) {
+            stats.read5Flash++;
+        } else if (flashAccess == 6) {
+            stats.read6Flash++;
+        } else if (flashAccess == 7) {
+            stats.read7Flash++;
+        } else if (flashAccess == 8) {
+            stats.read8Flash++;
+        }  else {
+            stats.readMoreFlash++;
+        }
+    }
+    /**
+     * 从指定页面文件读取数据
+     */
+    private String readFromPageFile(File pageFile, String targetKey) {
+        readPhysicalPage();
+        try (BufferedReader reader = new BufferedReader(new FileReader(pageFile))) {
+            boolean inKvPairs = false;
+            String line;
 
-        while ((line = reader.readLine()) != null) {
-            line = line.trim();
-            if (line.equals("KV_PAIRS_START")) {
-                inKvPairs = true;
-                continue;
-            } else if (line.equals("KV_PAIRS_END")) {
-                inKvPairs = false;
-                continue;
-            }
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.equals("KV_PAIRS_START")) {
+                    inKvPairs = true;
+                    continue;
+                } else if (line.equals("KV_PAIRS_END")) {
+                    inKvPairs = false;
+                    continue;
+                }
 
-            if (inKvPairs) {
-                String[] kvParts = line.split("->", 2);
-                if (kvParts.length == 2) {
-                    String fileKey = kvParts[0].trim();
-                    String fileValue = kvParts[1].trim();
+                if (inKvPairs) {
+                    String[] kvParts = line.split("->", 2);
+                    if (kvParts.length == 2) {
+                        String fileKey = kvParts[0].trim();
+                        String fileValue = kvParts[1].trim();
 
-                    if (fileKey.equals(targetKey)) {
-                        return fileValue;
+                        if (fileKey.equals(targetKey)) {
+                            return fileValue;
+                        }
                     }
                 }
             }
+        } catch (IOException e) {
+            System.err.println("Failed to read page file: " + pageFile.getAbsolutePath());
         }
-    } catch (IOException e) {
-        System.err.println("Failed to read page file: " + pageFile.getAbsolutePath());
+        return null;
     }
-    return null;
-}
+    public void readPhysicalPage() {
+        flashAccess++;
+        try {
+            Thread.sleep(0, Constants.FLASH_PAGE_READ_TIME_NS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+    public void writePhysicalPage() {
+        try {
+            Thread.sleep(0, Constants.FLASH_PAGE_WRITE_TIME_NS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+    public void eraseBlock(int blockNo) {
+        // Existing erase logic
+        // ...
 
-/**
- * 检查相邻页是否包含目标key
- */
-private String readFromNeighborPages(File currentPageFile, String targetKey, long currentBlockId, int currentPageNo) {
-    System.out.println("checking neighbor pages. pageFilePath: " + currentPageFile.getAbsolutePath());
-    try (BufferedReader reader = new BufferedReader(new FileReader(currentPageFile))) {
-        boolean inNeighborRanges = false;
-        String line;
-        String prevPageInfo = null;
-        String nextPageInfo = null;
+        // Simulate flash erase delay
+        try {
+            Thread.sleep(3, 0);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
-        while ((line = reader.readLine()) != null) {
-            line = line.trim();
+    /**
+     * 检查相邻页是否包含目标key
+     */
+    private String readFromNeighborPages(File currentPageFile, String targetKey, long currentBlockId, int currentPageNo) {
+        //  System.out.println("checking neighbor pages. pageFilePath: " + currentPageFile.getAbsolutePath());
+        try (BufferedReader reader = new BufferedReader(new FileReader(currentPageFile))) {
+            boolean inNeighborRanges = false;
+            String line;
+            String prevPageInfo = null;
+            String nextPageInfo = null;
+
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
 
                 if (line.startsWith("PREV_PAGE_")) {
                     prevPageInfo = line.substring("PREV_PAGE_".length());
@@ -1592,79 +1668,79 @@ private String readFromNeighborPages(File currentPageFile, String targetKey, lon
                     nextPageInfo = line.substring("NEXT_PAGE_".length());
                 }
 
-        }
-
-        long targetKeyNum = parseKeyNum(targetKey);
-
-        // 检查前一页
-        System.out.println("checking prev page. prevPageInfo: " + prevPageInfo);
-        if (prevPageInfo != null) {
-            String value = checkNeighborPage(prevPageInfo, targetKey, targetKeyNum);
-            if (value != null) {
-                return value;
             }
-        }
-        // 检查后一页
-        System.out.println("checking next page. nextPageInfo: " + nextPageInfo);
-        if (nextPageInfo != null) {
-            String value = checkNeighborPage(nextPageInfo, targetKey, targetKeyNum);
-            if (value != null) {
-                return value;
-            }
-        }
-    } catch (IOException e) {
-        System.err.println("Failed to read neighbor ranges from page file: " + currentPageFile.getAbsolutePath());
-    }
 
-    return null;
-}
+            long targetKeyNum = parseKeyNum(targetKey);
 
-/**
- * 检查指定相邻页是否包含目标key
- */
-private String checkNeighborPage(String pageInfo, String targetKey, long targetKeyNum) {
-    // 解析相邻页信息: blockId_pageNo->minKey|->|maxKey
-    String[] parts = pageInfo.split("->", 2);
-    if (parts.length != 2) {
-        return null;
-    }
-
-    String pageIdentifier = parts[0];
-    String[] keyRange = parts[1].split("\\|->\\|", 2);
-    if (keyRange.length != 2) {
-        return null;
-    }
-
-    String minKey = keyRange[0];
-    String maxKey = keyRange[1];
-
-    // 检查目标key是否在该页的范围内
-    long minKeyNum = parseKeyNum(minKey);
-    long maxKeyNum = parseKeyNum(maxKey);
-
-    if (targetKeyNum >= minKeyNum && targetKeyNum <= maxKeyNum) {
-        System.out.println("target key found in neighbor page: " + pageIdentifier);
-        // 构造相邻页文件路径
-        String[] pageParts = pageIdentifier.split("_");
-        if (pageParts.length == 2) {
-            try {
-                long blockId = Long.parseLong(pageParts[0]);
-                int pageNo = Integer.parseInt(pageParts[1]);
-
-                String neighborPagePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
-                File neighborPageFile = new File(neighborPagePath);
-
-                if (neighborPageFile.exists()) {
-                    return readFromPageFile(neighborPageFile, targetKey);
+            // 检查前一页
+            //  System.out.println("checking prev page. prevPageInfo: " + prevPageInfo);
+            if (prevPageInfo != null) {
+                String value = checkNeighborPage(prevPageInfo, targetKey, targetKeyNum);
+                if (value != null) {
+                    return value;
                 }
-            } catch (NumberFormatException e) {
-                System.err.println("Failed to parse page identifier: " + pageIdentifier);
             }
+            // 检查后一页
+            // System.out.println("checking next page. nextPageInfo: " + nextPageInfo);
+            if (nextPageInfo != null) {
+                String value = checkNeighborPage(nextPageInfo, targetKey, targetKeyNum);
+                if (value != null) {
+                    return value;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to read neighbor ranges from page file: " + currentPageFile.getAbsolutePath());
         }
+
+        return null;
     }
 
-    return null;
-}
+    /**
+     * 检查指定相邻页是否包含目标key
+     */
+    private String checkNeighborPage(String pageInfo, String targetKey, long targetKeyNum) {
+        // 解析相邻页信息: blockId_pageNo->minKey|->|maxKey
+        String[] parts = pageInfo.split("->", 2);
+        if (parts.length != 2) {
+            return null;
+        }
+
+        String pageIdentifier = parts[0];
+        String[] keyRange = parts[1].split("\\|->\\|", 2);
+        if (keyRange.length != 2) {
+            return null;
+        }
+
+        String minKey = keyRange[0];
+        String maxKey = keyRange[1];
+
+        // 检查目标key是否在该页的范围内
+        long minKeyNum = parseKeyNum(minKey);
+        long maxKeyNum = parseKeyNum(maxKey);
+
+        if (targetKeyNum >= minKeyNum && targetKeyNum <= maxKeyNum) {
+            // System.out.println("target key found in neighbor page: " + pageIdentifier);
+            // 构造相邻页文件路径
+            String[] pageParts = pageIdentifier.split("_");
+            if (pageParts.length == 2) {
+                try {
+                    long blockId = Long.parseLong(pageParts[0]);
+                    int pageNo = Integer.parseInt(pageParts[1]);
+
+                    String neighborPagePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
+                    File neighborPageFile = new File(neighborPagePath);
+
+                    if (neighborPageFile.exists()) {
+                        return readFromPageFile(neighborPageFile, targetKey);
+                    }
+                } catch (NumberFormatException e) {
+                    System.err.println("Failed to parse page identifier: " + pageIdentifier);
+                }
+            }
+        }
+
+        return null;
+    }
 
     private long parseKeyNum(String key) {
         // 处理空键或null键的情况
@@ -1869,24 +1945,24 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
             }
         }
 
-    public Long predictAddr(long keyNum) {
-        if (bloomFilter == null || !bloomFilter.mightContain(keyNum)) {
-          //  System.out.println("Key not found in bloom filter.");
-            return null;
-        }
-        //System.out.println("Checking keyNum: " + keyNum);
-        //System.out.println("Segment minKeyNum: " + minKeyNum + ", maxKeyNum: " + maxKeyNum);
-        if (keyNum >= minKeyNum && keyNum <= maxKeyNum) {
-               // System.out.println("Key " + keyNum + " found in segment.");
-            double result = a * keyNum + b;
-            long predicted = (long) result;
+        public Long predictAddr(long keyNum) {
+            if (bloomFilter == null || !bloomFilter.mightContain(keyNum)) {
+                //  System.out.println("Key not found in bloom filter.");
+                return null;
+            }
+            //System.out.println("Checking keyNum: " + keyNum);
+            //System.out.println("Segment minKeyNum: " + minKeyNum + ", maxKeyNum: " + maxKeyNum);
+            if (keyNum >= minKeyNum && keyNum <= maxKeyNum) {
+                // System.out.println("Key " + keyNum + " found in segment.");
+                double result = a * keyNum + b;
+                long predicted = (long) result;
 //            System.out.println("Predicting address for keyNum: " + keyNum +
 //                              ", a: " + a + ", b: " + b +
 //                              ", result: " + result + ", predicted: " + predicted);
-            return predicted;
+                return predicted;
+            }
+            return null;
         }
-        return null;
-    }
 
     }
     /**
@@ -1945,7 +2021,7 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
             this.data = new ArrayList<>();
             this.reverse_map = new ArrayList<>();
         }
-     }
+    }
 
     /**
      * 物理块类
@@ -2006,7 +2082,7 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
         List<Segment> segments;
         int model_id;
     }
-//    public static void main(String[] args) {
+    //    public static void main(String[] args) {
 //        MYKVSSD kvssd = new MYKVSSD();
 //        Runtime.getRuntime().addShutdownHook(new Thread(kvssd::shutdown));
 //        kvssd.put("user2719434334763201561", "value2719434334763201561");
@@ -2072,47 +2148,45 @@ private String checkNeighborPage(String pageInfo, String targetKey, long targetK
     }
     public static void main(String[] args) {
         MYKVSSD kvssd = new MYKVSSD();
-//        // 测试多个key的读取操作
-//        String[] testKeys = {
-//                "user292713126068779000",
-//                "user718011042563105175",
-//                "user1498413614602006438",
-//                "user6767619306422110467",
-//                "user9062295983798595795",
-//                "user666363271010298725",
-//                "user1610487139809764312",
-//                "user3393528578134494861",
-//                "user9132804061154425932",
-//                "user227058404529001044",
-//        };
-//
-//        int successCount = 0;
-//        for (String key : testKeys) {
-//            String value = kvssd.get(key);
-//            if (value != null) {
-//                System.out.println("读取成功: " + key + " -> " + value);
-//                successCount++;
-//            } else {
-//                System.out.println("读取失败: " + key);
-//            }
-//        }
-//
-//        System.out.println("读取测试完成，成功读取 " + successCount + "/" + testKeys.length + " 条数据");
+        // 测试多个key的读取操作
+        String[] testKeys = {
+                "user292713126068779000",
+                "user718011042563105175",
+                "user1498413614602006438",
+                "user6767619306422110467",
+                "user9062295983798595795",
+                "user666363271010298725",
+                "user1610487139809764312",
+                "user3393528578134494861",
+                "user9132804061154425932",
+                "user227058404529001044",
+        };
 
-
-        Runtime.getRuntime().addShutdownHook(new Thread(kvssd::shutdown));
-        try {
-
-            List<Pair<String,String>> kvs = generateKVData();
-            for (Pair<String,String> kv : kvs) {
-                kvssd.put(kv.first, kv.second);
+        int successCount = 0;
+        for (String key : testKeys) {
+            String value = kvssd.get(key);
+            if (value != null) {
+                System.out.println("读取成功: " + key + " -> " + value);
+                successCount++;
+            } else {
+                System.out.println("读取失败: " + key);
             }
-
-
-        } catch (Exception e) {
-            System.err.println("测试过程中发生错误: " + e.getMessage());
-            e.printStackTrace();
         }
+
+        System.out.println("读取测试完成，成功读取 " + successCount + "/" + testKeys.length + " 条数据");
+//        Runtime.getRuntime().addShutdownHook(new Thread(kvssd::shutdown));
+//        try {
+//
+//            List<Pair<String,String>> kvs = generateKVData();
+//            for (Pair<String,String> kv : kvs) {
+//                kvssd.put(kv.first, kv.second);
+//            }
+//
+//
+//        } catch (Exception e) {
+//            System.err.println("测试过程中发生错误: " + e.getMessage());
+//            e.printStackTrace();
+//        }
 
     }
 

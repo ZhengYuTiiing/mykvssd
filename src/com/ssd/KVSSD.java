@@ -39,10 +39,13 @@ public class KVSSD{
 
     // ==================== 构造函数与初始化（含持久化加载）====================
     public KVSSD() {
+
         this(15L * 1024 * 1024 * 1024); // 默认 15GB 容量
     }
 
     public KVSSD(long totalCapacity) {
+        System.out.println("Current PERSIST_DIR: " + Constants.PERSIST_DIR);
+        System.out.println("Current LSM_LEVELS_FILE: " + Constants.LSM_LEVELS_FILE);
         // 初始化内存结构
         this.memtable = Collections.synchronizedList(new ArrayList<>());
         this.immutableMemtables = new LinkedBlockingQueue<>();
@@ -870,126 +873,300 @@ public class KVSSD{
         }
         return block;
     }
+//    /**
+//     * 将 Memtable 写入 SSTable（改造：加入 SST 持久化）
+//     */
+//    private SSTable writeMemtableToSSTable(List<Pair<String, String>> memtable, int level) {
+//        System.out.println("now write no."+nextSstId+" sstable.");
+//        SSTable sst = new SSTable(nextSstId++, level);
+//        sst.kvpairSize = memtable.size();
+//        System.out.println("memtable size:"+memtable.size());
+//        // 1. Memtable 排序
+//        List<Pair<String, String>> sortedMemtable = new ArrayList<>(memtable);
+//        sortedMemtable.sort(Comparator.comparing(p -> p.first));
+//        System.out.println("sortedmemtable size:"+sortedMemtable.size());
+////        for(Pair<String, String> kv : sortedMemtable){
+////            System.out.println("key :"+kv.first);
+////        }
+//        // 2. 分配物理块
+//        PhysicalBlock block = allocateBlock(level);
+//        if (block == null) {
+//            System.out.println("dead here.");
+//            return null;
+//        }
+//        // 3. 拆分 KV 页
+//        List<PhysicalPage> kvPages = new ArrayList<>();
+//        List<Pair<String, String>> pageKvs = new ArrayList<>();
+//        int pageSizeUsed = 0;
+//        for (Pair<String, String> kv : sortedMemtable) {
+//            int kvSize = kv.first.getBytes(StandardCharsets.UTF_8).length +
+//                    kv.second.getBytes(StandardCharsets.UTF_8).length;
+//            if (pageSizeUsed + kvSize > Constants.PAGE_SIZE) {
+//                // 页满，创建并添加物理页
+//                String ppa = generatePPA(block.blockId);
+//                PhysicalPage page = new PhysicalPage(ppa);
+//                page.data = new ArrayList<>(pageKvs);
+//                page.updateKeyRange();
+//
+//                System.out.println("page "+nextPageNo+" key range:"+page.keyRange.first+" "+page.keyRange.second);
+//                int pageNo = Integer.parseInt(ppa.split("_")[1]);
+//                if (block.addPage(pageNo, page)) {
+//                    kvPages.add(page);
+//                    stats.totalFlashWrites += Constants.PAGE_SIZE;
+//                }
+//
+//                pageKvs.clear();
+//                pageSizeUsed = 0;
+//            }
+//
+//            pageKvs.add(kv);
+//            pageSizeUsed += kvSize;
+//        }
+//        // 4. 处理最后一页
+//        if (!pageKvs.isEmpty()) {
+//            String ppa = generatePPA(block.blockId);
+//            PhysicalPage page = new PhysicalPage(ppa);
+//            page.data = new ArrayList<>(pageKvs);
+//
+//            page.updateKeyRange();
+//            System.out.println("page  key range:"+page.keyRange.first+" "+page.keyRange.second);
+//            int pageNo = Integer.parseInt(ppa.split("_")[1]);
+//            if (block.addPage(pageNo, page)) {
+//                kvPages.add(page);
+//                stats.totalFlashWrites += Constants.PAGE_SIZE;
+//            }
+//            pageKvs.clear();
+//            pageSizeUsed = 0;
+//        }
+//        // 5. 创建元数据页（修改后：写入元数据区）
+//        // 5.1 从元数据区分配块（确保独立存储）
+//        PhysicalBlock metaBlock = allocateMetaBlock();
+//        if (metaBlock == null) {
+//            System.err.println("Failed to allocate meta block for metadata page");
+//            return null;
+//        }
+//        // 5.2 生成元数据页的PPA（基于元数据区块）
+//        String metaPpa = generatePPA(metaBlock.blockId); // 复用原有PPA生成逻辑
+//        sst.metadataPagePpa=metaPpa; // Meta Page指针（如"0_0"）
+//        // 5.3 初始化元数据页并写入KV页索引
+//        PhysicalPage metaPage = new PhysicalPage(metaPpa);
+//        for (PhysicalPage page : kvPages) {
+//            metaPage.data.add(new Pair<>(page.ppa,
+//                    page.keyRange.first + "|" + page.keyRange.second));
+//        }
+//        // 5.4 将元数据页添加到元数据区块（而非数据块）
+//        int metaPageNo = Integer.parseInt(metaPpa.split("_")[1]);
+//        if (metaBlock.addPage(metaPageNo, metaPage)) {
+//            sst.metadataPage = metaPage;
+//            stats.totalFlashWrites += Constants.PAGE_SIZE; // 统计元数据页写入
+//            // 关联元数据块与SSTable
+//            metaBlock.sstables.add(sst.sstId);
+//            try {
+//                savePhysicalBlockToFile(metaBlock); // 持久化元数据区块变更
+//            } catch (IOException e) {
+//                System.err.println("Failed to persist meta block after adding metadata page: " + e.getMessage());
+//            }
+//        } else {
+//            // 元数据区块添加失败时，释放块并返回错误
+//            metaBlock.allocated = false;
+//            metaFreeBlocks.add(metaBlock.blockId);
+//            System.err.println("Failed to add metadata page to meta block");
+//            return null;
+//        }
+//        // 6. 完善 SSTable 信息
+//        // sst.kvPages = kvPages;
+//        sst.updateKeyRange(kvPages);
+//        block.sstables.add(sst.sstId);
+//        // 7. 加入 LSM 层级
+//        List<SSTable> levelList = lsmLevels.computeIfAbsent(level, k -> new ArrayList<>());
+//        levelList.add(sst);
+//        // 按 min key 排序
+//        levelList.sort(Comparator.comparing(s -> s.keyRange.first));
+//        // 8. 核心改造：持久化 SSTable 和物理块元数据
+//        try {
+//            System.out.println("now  write no."+(nextSstId-1)+"sstable done.");
+//            saveSSTableToFile(sst);
+//            savePhysicalBlockToFile(block);
+//            saveMetaPageToFile(metaBlock);
+//            // saveKeyRangeTreeToDisk();
+//        } catch (IOException e) {
+//            System.err.println("Failed to persist SSTable/block: " + e.getMessage());
+//            return null;
+//        }
+//        return sst;
+//    }
+// 假设 Pair, SSTable, PhysicalBlock, PhysicalPage, Constants 等类已在别处定义。
+
     /**
-     * 将 Memtable 写入 SSTable（改造：加入 SST 持久化）
+     * 将 Memtable 写入 SSTable，并处理一个 Block 写满的情况。
+     * 当一个 Block（例如128页）被写满时，此方法会停止向当前 SSTable 添加数据。
+     * 任何未成功写入的键值对都会被重新填充到传入的 `memtable` 列表中，
+     * 以便调用者可以对这些剩余的数据进行下一次刷盘操作。
+     *
+     * @param memtable 包含待写入键值对的列表。此列表在方法执行后将被修改，仅包含未成功写入的键值对。
+     * @param level 目标LSM层级。
+     * @return 如果成功写入了至少一个页面，则返回创建的 SSTable；否则返回 null。
      */
     private SSTable writeMemtableToSSTable(List<Pair<String, String>> memtable, int level) {
-        System.out.println("now write no."+nextSstId+" sstable.");
+        System.out.println("正在写入 SSTable，编号: " + nextSstId);
         SSTable sst = new SSTable(nextSstId++, level);
-        sst.kvpairSize = memtable.size();
-        System.out.println("memtable size:"+memtable.size());
-        // 1. Memtable 排序
+
+        // 1. 对 Memtable 进行排序
         List<Pair<String, String>> sortedMemtable = new ArrayList<>(memtable);
         sortedMemtable.sort(Comparator.comparing(p -> p.first));
-        System.out.println("sortedmemtable size:"+sortedMemtable.size());
+
+        for (Pair<String, String> kv : sortedMemtable) {
+            if(kv.first.equals("user350269079075")){
+                System.out.println("user350269079075 in sortedMemtable "+kv);
+            }
+        }
+        // 清空原始 memtable，准备接收任何处理后剩余的 KV
+        memtable.clear();
+
         // 2. 分配物理块
         PhysicalBlock block = allocateBlock(level);
         if (block == null) {
-            System.out.println("dead here.");
+            System.out.println("分配块失败。所有 KV 将返回到 memtable。");
+            // 无法分配块，所有数据都算作剩余数据
+            memtable.addAll(sortedMemtable);
             return null;
         }
-        // 3. 拆分 KV 页
+
+        // 3. 将 KV 对拆分到页中
         List<PhysicalPage> kvPages = new ArrayList<>();
         List<Pair<String, String>> pageKvs = new ArrayList<>();
         int pageSizeUsed = 0;
-        for (Pair<String, String> kv : sortedMemtable) {
+        int i = 0; // 使用索引遍历，以便记录中断点
+        nextPageNo = 0;
+        for (i = 0; i < sortedMemtable.size(); i++) {
+            Pair<String, String> kv = sortedMemtable.get(i);
             int kvSize = kv.first.getBytes(StandardCharsets.UTF_8).length +
                     kv.second.getBytes(StandardCharsets.UTF_8).length;
-            if (pageSizeUsed + kvSize > Constants.PAGE_SIZE) {
-                // 页满，创建并添加物理页
+            if(kv.first=="user350269079075"){
+                System.out.println("user350269079075 in page "+nextPageNo );
+                continue;
+            }
+
+            if (pageSizeUsed > 0 && pageSizeUsed + kvSize > Constants.PAGE_SIZE) {
+                // 当前页已满，创建并尝试添加物理页
                 String ppa = generatePPA(block.blockId);
                 PhysicalPage page = new PhysicalPage(ppa);
                 page.data = new ArrayList<>(pageKvs);
                 page.updateKeyRange();
 
-
                 int pageNo = Integer.parseInt(ppa.split("_")[1]);
                 if (block.addPage(pageNo, page)) {
                     kvPages.add(page);
                     stats.totalFlashWrites += Constants.PAGE_SIZE;
+                    pageKvs.clear();
+                    pageSizeUsed = 0;
+                } else {
+                    // Block 已满，无法添加新页。中断循环。
+                    System.out.println("Block 已满。停止写入 SSTable。");
+                    break;
                 }
-
-                pageKvs.clear();
-                pageSizeUsed = 0;
             }
-
             pageKvs.add(kv);
             pageSizeUsed += kvSize;
         }
-        // 4. 处理最后一页
-        if (!pageKvs.isEmpty()) {
+
+        // 4. 循环结束后的处理
+        if (i < sortedMemtable.size()) {
+            nextPageNo=0;
+            this.memtable.addAll(pageKvs);
+            //TODO memtablef的大小改一改，说不定还会触发flush
+            for(int j=i;j<sortedMemtable.size();j++){
+                this.memtable.add(sortedMemtable.get(j));
+                if(sortedMemtable.get(j).first=="user350269079075"){
+                    System.out.println("user350269079075 in memtable "+j);
+                }
+            }
+
+
+
+        } else if (!pageKvs.isEmpty()) {
+            // 循环正常结束，处理最后一页
             String ppa = generatePPA(block.blockId);
             PhysicalPage page = new PhysicalPage(ppa);
             page.data = new ArrayList<>(pageKvs);
-
             page.updateKeyRange();
 
             int pageNo = Integer.parseInt(ppa.split("_")[1]);
             if (block.addPage(pageNo, page)) {
+                System.out.println("最后一页写入成功。所有 KV 都已处理。");
                 kvPages.add(page);
                 stats.totalFlashWrites += Constants.PAGE_SIZE;
+                // memtable 保持为空，因为没有剩余数据
+            } else {
+                // Block 已满，最后一页也无法写入
+                System.out.println("Block 已满，无法写入最后一页。将返回 " + pageKvs.size() + " 个 KV 到 memtable。");
+                memtable.addAll(pageKvs);
             }
-            pageKvs.clear();
-            pageSizeUsed = 0;
         }
-        // 5. 创建元数据页（修改后：写入元数据区）
-        // 5.1 从元数据区分配块（确保独立存储）
-        PhysicalBlock metaBlock = allocateMetaBlock();
-        if (metaBlock == null) {
-            System.err.println("Failed to allocate meta block for metadata page");
+
+        // 如果没有页面被写入，说明SSTable为空，这是一个无效操作
+        if (kvPages.isEmpty()) {
+            System.err.println("没有任何页被写入 SSTable。中止创建。");
+            block.allocated = false; // 归还 block (需要实现具体的归还逻辑)
+            // metaFreeBlocks.add(block.blockId);
             return null;
         }
-        // 5.2 生成元数据页的PPA（基于元数据区块）
-        String metaPpa = generatePPA(metaBlock.blockId); // 复用原有PPA生成逻辑
-        sst.metadataPagePpa=metaPpa; // Meta Page指针（如"0_0"）
-        // 5.3 初始化元数据页并写入KV页索引
-        PhysicalPage metaPage = new PhysicalPage(metaPpa);
-        for (PhysicalPage page : kvPages) {
-            metaPage.data.add(new Pair<>(page.ppa,
-                    page.keyRange.first + "|" + page.keyRange.second));
+
+        sst.kvpairSize = sortedMemtable.size() - memtable.size(); // 实际写入的KV数量
+
+        // 5. 创建元数据页... (后续逻辑基本不变)
+        PhysicalBlock metaBlock = allocateMetaBlock();
+        if (metaBlock == null) {
+            System.err.println("为元数据页分配元数据块失败");
+            // 实际应用中需要更复杂的错误处理/回滚
+            return null;
         }
-        // 5.4 将元数据页添加到元数据区块（而非数据块）
+
+        String metaPpa = generatePPA(metaBlock.blockId);
+        sst.metadataPagePpa = metaPpa;
+        PhysicalPage metaPage = new PhysicalPage(metaPpa);
+        for (PhysicalPage p : kvPages) {
+            metaPage.data.add(new Pair<>(p.ppa, p.keyRange.first + "|" + p.keyRange.second));
+        }
+
         int metaPageNo = Integer.parseInt(metaPpa.split("_")[1]);
         if (metaBlock.addPage(metaPageNo, metaPage)) {
             sst.metadataPage = metaPage;
-            stats.totalFlashWrites += Constants.PAGE_SIZE; // 统计元数据页写入
-            // 关联元数据块与SSTable
+            stats.totalFlashWrites += Constants.PAGE_SIZE;
             metaBlock.sstables.add(sst.sstId);
             try {
-                savePhysicalBlockToFile(metaBlock); // 持久化元数据区块变更
+                savePhysicalBlockToFile(metaBlock);
             } catch (IOException e) {
-                System.err.println("Failed to persist meta block after adding metadata page: " + e.getMessage());
+                System.err.println("持久化元数据块失败: " + e.getMessage());
             }
         } else {
-            // 元数据区块添加失败时，释放块并返回错误
             metaBlock.allocated = false;
-            metaFreeBlocks.add(metaBlock.blockId);
-            System.err.println("Failed to add metadata page to meta block");
+            // metaFreeBlocks.add(metaBlock.blockId);
+            System.err.println("未能将元数据页添加到元数据块");
             return null;
         }
+
         // 6. 完善 SSTable 信息
-        // sst.kvPages = kvPages;
         sst.updateKeyRange(kvPages);
         block.sstables.add(sst.sstId);
+
         // 7. 加入 LSM 层级
         List<SSTable> levelList = lsmLevels.computeIfAbsent(level, k -> new ArrayList<>());
         levelList.add(sst);
-        // 按 min key 排序
         levelList.sort(Comparator.comparing(s -> s.keyRange.first));
-        // 8. 核心改造：持久化 SSTable 和物理块元数据
+
+        // 8. 持久化 SSTable 和物理块元数据
         try {
-            System.out.println("now  write no."+(nextSstId-1)+"sstable done.");
+            System.out.println("编号为 " + (nextSstId - 1) + " 的 sstable 写入完成，包含 " + sst.kvpairSize + " 个 KV。");
             saveSSTableToFile(sst);
             savePhysicalBlockToFile(block);
             saveMetaPageToFile(metaBlock);
-            // saveKeyRangeTreeToDisk();
         } catch (IOException e) {
-            System.err.println("Failed to persist SSTable/block: " + e.getMessage());
+            System.err.println("持久化 SSTable/block 失败: " + e.getMessage());
             return null;
         }
         return sst;
     }
-
     /**
      * 检查层级压缩（原有逻辑保留）
      */
@@ -1398,6 +1575,11 @@ public class KVSSD{
                     String[] newSstKeyRangeParts = currentGroup.get(currentGroup.size()-(int) (Constants.BLOCK_SIZE / Constants.PAGE_SIZE)).second.split("\\|"); // 注意转义竖线（|在正则中需转义）
                     String newSstMinKey = newSstKeyRangeParts[0].trim(); // 去除空格，确保键比较准确
                     String newSstMaxKey = next.second.split("\\|")[0].trim();
+//                    String numericPart = newSstMaxKey.substring(4); // 提取"user"之后的部分
+//                    long numericValue = Long.parseLong(numericPart);
+//                    if (numericValue > 0) { // 确保不会出现负数
+//                        newSstMaxKey = "user" + (numericValue - 1);
+//                    }
                     newSst.keyRange = new Pair<>(newSstMinKey, newSstMaxKey); // 赋值SSTable键范围
                     newSst.metadataPagePpa = newMetaPage.ppa; // 关联MetaPage的Flash物理地址（PPA）
                     try {
@@ -1457,6 +1639,7 @@ public class KVSSD{
                     });
                     String[] KeyRangeParts = currentGroup.get(0).second.split("\\|");
                     String newSstMaxKey = KeyRangeParts[1].trim();
+
                     newSst.keyRange = new Pair<>(newSstMinKey, newSstMaxKey); // 赋值SSTable键范围
                     newSst.metadataPagePpa = newMetaPage.ppa; // 关联MetaPage的Flash物理地址（PPA）
                     try {
@@ -2060,7 +2243,7 @@ public class KVSSD{
 
         // 3. 查 LSM 树（SSTable）
         for (int i=0;i<lsmLevels.size();i++) {
-            //  System.out.println("in level:"+i);
+          //   System.out.println("in level:"+i);
             List<SSTable> levelSsts =lsmLevels.get(i);
             if (levelSsts == null || levelSsts.isEmpty()) {
                 continue; // 跳过空层级
@@ -2068,136 +2251,141 @@ public class KVSSD{
 
             // 2. 遍历当前层级的SSTable（已按键范围起始值升序排列，利用不重叠特性优化）
             boolean levelHasPotential = false; // 标记当前层级是否可能包含目标键
-            for (SSTable sst : levelSsts) {
-                // System.out.println("level " + i + " 's  sstable!");
+            for (int j=0;j<levelSsts.size();j++) {
+                SSTable sst = levelSsts.get(j);
+               // System.out.println("level " + i + " 's  sstable!");
                 // 2.1 目标键 < 当前SSTable的起始键：后续SSTable起始键更大，直接跳出该层级
                 if (key.compareTo(sst.keyRange.first) < 0) {
                     //  System.out.println("skip this level");
                     break;
                 }
                 // 2.2 目标键 > 当前SSTable的结束键：继续检查下一个SSTable
-                if (key.compareTo(sst.keyRange.second) > 0) {
-                    // System.out.println("skip this sst"+sst.sstId);
-                    continue;
-                }
+//                if (key.compareTo(sst.keyRange.second) >= 0) {
+//                    // System.out.println("skip this sst"+sst.sstId);
+//                    continue;
+//                }
+                if((key.compareTo(sst.keyRange.first) >= 0 && key.compareTo(sst.keyRange.second) <0)||(key.compareTo(sst.keyRange.first) >= 0 && key.compareTo(sst.keyRange.second) <=0 && j==levelSsts.size()-1)){
+                    // System.out.println("真的开始读文件了");
+                    // 2.3 目标键在当前SSTable的键范围内：开始查询该SSTable
+                   // System.out.println("hit this sst:"+sst.sstId);
+                    levelHasPotential = true;
+                    flashAccess++; // 1. 访问SSTable的Meta Page（闪存访问：读取SSTable元数据）
+                    stats.totalFlashReads++;
 
-                // System.out.println("真的开始读文件了");
-                // 2.3 目标键在当前SSTable的键范围内：开始查询该SSTable
-                //System.out.println("hit this sst:"+sst.sstId);
-                levelHasPotential = true;
-                flashAccess++; // 1. 访问SSTable的Meta Page（闪存访问：读取SSTable元数据）
-                stats.totalFlashReads++;
-
-                // -------------------------- 核心修改1：解析Meta Page PPA，定位【Meta Block元数据文件】 --------------------------
-                // Meta Page PPA格式："块ID_页偏移"（如"0_0" → 块ID=0，页偏移忽略）
-                //  System.out.println("sst中读出来meta pag ppa ："+sst.metadataPagePpa);
-                //  System.out.println("metappa:"+sst.metadataPagePpa);
-                String[] metaPpaParts = sst.metadataPagePpa.split("_");
-                if (metaPpaParts.length < 1) {
-                    System.err.println("Invalid Meta Page PPA: " + sst.metadataPagePpa + " (SST ID: " + sst.sstId + ")");
-                    continue;
-                }
-                String metaBlockId = metaPpaParts[0]; // 提取块ID（决定Meta Block元数据文件名）
-                // 构造Meta Block元数据文件路径（如：Constants.META_BLOCK_META_DIR/0.txt）
-                // System.out.println("读出来meta文件 ："+Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
-                File metaBlockMetaFile = new File(Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
-                if (!metaBlockMetaFile.exists()) {
-                    System.err.println("Meta Block元数据文件不存在: " + metaBlockMetaFile.getAbsolutePath());
-                    continue;
-                }
-                //  System.out.println("read this mate file:"+Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
-                // -------------------------- 核心修改2：读取【Meta Block元数据文件】，解析KV Page映射关系 --------------------------
-                // 存储：KV Page PPA → 键范围（从Meta Block元数据文件中提取）
-                // KV Page PPA格式："数据块ID_页编号"（如"0_22" → 数据块ID=0，页编号=22）
-                Map<String, Pair<String, String>> kvPageRangeMap = new HashMap<>();
-                try (BufferedReader metaReader = new BufferedReader(
-                        new InputStreamReader(new FileInputStream(metaBlockMetaFile), StandardCharsets.UTF_8))) {
-                    String metaLine;
-                    // 解析文件中"KV Page映射行"（格式：0_22|userXXX||userYYY）
-                    while ((metaLine = metaReader.readLine()) != null) {
-                        metaLine = metaLine.trim();
-                        if (metaLine.isEmpty()) continue;
-
-                        // 仅处理KV Page映射行（特征：包含"|"，且格式为"数据块ID_页编号|起始键||结束键"）
-                        if (metaLine.contains("|")) {
-                            // 按"|"分割：第0段=KV Page PPA，第1段=起始键，第3段=结束键（兼容"||"分隔）
-                            String[] kvPageParts = metaLine.split("\\|");
-                            if (kvPageParts.length < 4) { // 确保格式正确（如：0_22|key1||key2 → 分割后长度=4）
-                                //           System.err.println("无效的KV Page映射格式: " + metaLine + " (文件: " + metaBlockMetaFile.getName() + ")");
-                                continue;
-                            }
-                            String kvPagePpa = kvPageParts[0].trim();       // KV Page PPA（如"0_22"）
-                            String pageKeyStart = kvPageParts[1].trim();    // 页起始键（如"user2435493937695570810"）
-                            String pageKeyEnd = kvPageParts[3].trim();      // 页结束键（如"user2502149056439609611"）
-
-                            // 过滤空键范围（避免无效数据）
-                            if (!pageKeyStart.isEmpty() && !pageKeyEnd.isEmpty()) {
-                                kvPageRangeMap.put(kvPagePpa, new Pair<>(pageKeyStart, pageKeyEnd));
-                            }
-                        }
-                    }
-                    //    System.out.println("meta文件中有"+kvPageRangeMap.size()+"个页");
-                } catch (IOException e) {
-                    System.err.println("读取Meta Block元数据文件失败: " + metaBlockMetaFile.getAbsolutePath() + " - " + e.getMessage());
-                    continue;
-                }
-
-                // -------------------------- 核心修改3：筛选目标KV Page，定位【实际数据Block文件】 --------------------------
-                List<String> targetKvPagePpas = new ArrayList<>(); // 匹配到的目标KV Page PPA
-                Pair<String, String> targetPageRange = null; // 目标KV Page的键范围
-                for (Map.Entry<String, Pair<String, String>> entry : kvPageRangeMap.entrySet()) {
-                    String kvPagePpa = entry.getKey();
-                    Pair<String, String> pageRange = entry.getValue();
-
-                    if(key.compareTo(pageRange.first)>=0 && key.compareTo(pageRange.second)<=0){
-                        //  System.out.println("physical ppa:"+kvPagePpa+"hit!");
-                        // 3.3 目标键在当前Page键范围内：记录目标Page信息
-                        targetKvPagePpas.add(kvPagePpa);
-                        // targetPageRange = pageRange;
-                        //break;
-                    }
-
-                }
-
-                // 无匹配的KV Page：跳过当前SSTable
-                if (targetKvPagePpas == null) {
-                    System.out.println("当前SSTable中无包含目标键的KV Page");
-                    continue;
-                }
-
-                // -------------------------- 核心修改4：解析目标KV Page PPA，定位【实际数据Block文件】 --------------------------
-                // 目标KV Page PPA格式："数据块ID_页编号"（如"0_22" → 数据块ID=0，页编号=22）
-                for(String targetKvPagePpa:targetKvPagePpas){
-                    String[] dataPpaParts = targetKvPagePpa.split("_");
-                    if (dataPpaParts.length < 2) {
-                        // System.err.println("无效的KV Page PPA: " + targetKvPagePpa + " (SST ID: " + sst.sstId + ")");
-                        // continue;
-                    }
-                    String dataBlockId = dataPpaParts[0]; // 数据块ID（决定实际数据文件名）
-                    int targetPageNo = Integer.parseInt(dataPpaParts[1]); // 目标页编号（如22）
-                    // 目标页文件路径：块目录/页编号.txt（如 ./block_meta/0/22.txt）
-                    File targetPageFile = new File(Constants.BLOCK_META_DIR + dataBlockId + "/" + targetPageNo + ".txt");
-                    if (!targetPageFile.exists()) {
-                        System.err.println("目标页文件不存在: " + targetPageFile.getAbsolutePath());
+                    // -------------------------- 核心修改1：解析Meta Page PPA，定位【Meta Block元数据文件】 --------------------------
+                    // Meta Page PPA格式："块ID_页偏移"（如"0_0" → 块ID=0，页偏移忽略）
+                    //  System.out.println("sst中读出来meta pag ppa ："+sst.metadataPagePpa);
+                    //  System.out.println("metappa:"+sst.metadataPagePpa);
+                    String[] metaPpaParts = sst.metadataPagePpa.split("_");
+                    if (metaPpaParts.length < 1) {
+                        System.err.println("Invalid Meta Page PPA: " + sst.metadataPagePpa + " (SST ID: " + sst.sstId + ")");
                         continue;
                     }
-                    // -------------------------- 核心修改5：读取【实际数据Block文件】，提取目标KV对 --------------------------
-                    flashAccess++; // 2. 访问实际数据Block文件（闪存访问：读取KV Page数据）
-                    stats.totalFlashReads++;
-                    // 调用工具方法读取目标页的KV对（需确保readKvFromDataBlock方法适配新的文件格式）
-                    String targetValue = readKvFromPageFile(targetPageFile, key);
-                    if (targetValue != null) {
-                        updateReadStats(flashAccess);
-                        return targetValue;
+                    String metaBlockId = metaPpaParts[0]; // 提取块ID（决定Meta Block元数据文件名）
+                    // 构造Meta Block元数据文件路径（如：Constants.META_BLOCK_META_DIR/0.txt）
+                    // System.out.println("读出来meta文件 ："+Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
+                    File metaBlockMetaFile = new File(Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
+                    if (!metaBlockMetaFile.exists()) {
+                        System.err.println("Meta Block元数据文件不存在: " + metaBlockMetaFile.getAbsolutePath());
+                        continue;
                     }
+                    //  System.out.println("read this mate file:"+Constants.META_BLOCK_META_DIR + metaBlockId + ".txt");
+                    // -------------------------- 核心修改2：读取【Meta Block元数据文件】，解析KV Page映射关系 --------------------------
+                    // 存储：KV Page PPA → 键范围（从Meta Block元数据文件中提取）
+                    // KV Page PPA格式："数据块ID_页编号"（如"0_22" → 数据块ID=0，页编号=22）
+                    Map<String, Pair<String, String>> kvPageRangeMap = new HashMap<>();
+                    try (BufferedReader metaReader = new BufferedReader(
+                            new InputStreamReader(new FileInputStream(metaBlockMetaFile), StandardCharsets.UTF_8))) {
+                        String metaLine;
+                        // 解析文件中"KV Page映射行"（格式：0_22|userXXX||userYYY）
+                        while ((metaLine = metaReader.readLine()) != null) {
+                            metaLine = metaLine.trim();
+                            if (metaLine.isEmpty()) continue;
+
+                            // 仅处理KV Page映射行（特征：包含"|"，且格式为"数据块ID_页编号|起始键||结束键"）
+                            if (metaLine.contains("|")) {
+                                // 按"|"分割：第0段=KV Page PPA，第1段=起始键，第3段=结束键（兼容"||"分隔）
+                                String[] kvPageParts = metaLine.split("\\|");
+                                if (kvPageParts.length < 4) { // 确保格式正确（如：0_22|key1||key2 → 分割后长度=4）
+                                    //           System.err.println("无效的KV Page映射格式: " + metaLine + " (文件: " + metaBlockMetaFile.getName() + ")");
+                                    continue;
+                                }
+                                String kvPagePpa = kvPageParts[0].trim();       // KV Page PPA（如"0_22"）
+                                String pageKeyStart = kvPageParts[1].trim();    // 页起始键（如"user2435493937695570810"）
+                                String pageKeyEnd = kvPageParts[3].trim();      // 页结束键（如"user2502149056439609611"）
+
+                                // 过滤空键范围（避免无效数据）
+                                if (!pageKeyStart.isEmpty() && !pageKeyEnd.isEmpty()) {
+                                    kvPageRangeMap.put(kvPagePpa, new Pair<>(pageKeyStart, pageKeyEnd));
+                                }
+                            }
+                        }
+                        //    System.out.println("meta文件中有"+kvPageRangeMap.size()+"个页");
+                    } catch (IOException e) {
+                        System.err.println("读取Meta Block元数据文件失败: " + metaBlockMetaFile.getAbsolutePath() + " - " + e.getMessage());
+                        continue;
+                    }
+
+                    // -------------------------- 核心修改3：筛选目标KV Page，定位【实际数据Block文件】 --------------------------
+                    List<String> targetKvPagePpas = new ArrayList<>(); // 匹配到的目标KV Page PPA
+                    Pair<String, String> targetPageRange = null; // 目标KV Page的键范围
+                    for (Map.Entry<String, Pair<String, String>> entry : kvPageRangeMap.entrySet()) {
+                        String kvPagePpa = entry.getKey();
+                        Pair<String, String> pageRange = entry.getValue();
+
+                        if(key.compareTo(pageRange.first)>=0 && key.compareTo(pageRange.second)<=0){
+                            flashAccess++; // 1. 访问SSTable的Meta Page（闪存访问：读取SSTable元数据）
+                            stats.totalFlashReads++;
+                           // System.out.println("physical ppa:"+kvPagePpa+"hit!");
+                            // 3.3 目标键在当前Page键范围内：记录目标Page信息
+                            targetKvPagePpas.add(kvPagePpa);
+                            // targetPageRange = pageRange;
+                            //break;
+                        }
+
+                    }
+
+                    // 无匹配的KV Page：跳过当前SSTable
+                    if (targetKvPagePpas == null) {
+                        System.out.println("当前SSTable中无包含目标键的KV Page");
+                        continue;
+                    }
+
+                    // -------------------------- 核心修改4：解析目标KV Page PPA，定位【实际数据Block文件】 --------------------------
+                    // 目标KV Page PPA格式："数据块ID_页编号"（如"0_22" → 数据块ID=0，页编号=22）
+                    for(String targetKvPagePpa:targetKvPagePpas){
+                        String[] dataPpaParts = targetKvPagePpa.split("_");
+                        if (dataPpaParts.length < 2) {
+                            // System.err.println("无效的KV Page PPA: " + targetKvPagePpa + " (SST ID: " + sst.sstId + ")");
+                            // continue;
+                        }
+                        String dataBlockId = dataPpaParts[0]; // 数据块ID（决定实际数据文件名）
+                        int targetPageNo = Integer.parseInt(dataPpaParts[1]); // 目标页编号（如22）
+                        // 目标页文件路径：块目录/页编号.txt（如 ./block_meta/0/22.txt）
+                        File targetPageFile = new File(Constants.BLOCK_META_DIR + dataBlockId + "/" + targetPageNo + ".txt");
+                        if (!targetPageFile.exists()) {
+                            System.err.println("目标页文件不存在: " + targetPageFile.getAbsolutePath());
+                            continue;
+                        }
+                        // -------------------------- 核心修改5：读取【实际数据Block文件】，提取目标KV对 --------------------------
+                        flashAccess++; // 2. 访问实际数据Block文件（闪存访问：读取KV Page数据）
+                        stats.totalFlashReads++;
+                        // 调用工具方法读取目标页的KV对（需确保readKvFromDataBlock方法适配新的文件格式）
+                        String targetValue = readKvFromPageFile(targetPageFile, key);
+                        if (targetValue != null) {
+                            updateReadStats(flashAccess);
+                            return targetValue;
+                        }
+                    }
+//                  //  break;
                 }
-                break;
             }
             // 4. 若当前层级已找到潜在匹配的 SSTable，但未找到键（可能被覆盖），仍需检查更低层级
             // （注：LSM 树中同一键可能在多层级存在，需确认所有层级）
         }
         // 4. 未找到
         updateReadStats(flashAccess);
+        System.out.println("KVSSD未找到键：" + key);
         return null;
     }
     /**
@@ -2566,7 +2754,7 @@ public class KVSSD{
      */
     public static void main(String[] args) {
         KVSSD kvssd = new KVSSD();
-        String value=kvssd.get("user2719434334763201561");
+        String value=kvssd.get("user793670813879");
         if(value!=null){
             System.out.println("Read success!");
         }else{
