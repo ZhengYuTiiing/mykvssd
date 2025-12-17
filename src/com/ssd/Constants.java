@@ -35,7 +35,7 @@ public class Constants {
     };
 
     // 新增：持久化路径（确保程序有权限读写）
-    public static String PERSIST_DIR = "./data2/kvssd_kvssd_data/"; // 总持久化目录
+    public static String PERSIST_DIR = "./data2/kvssd_mykvssd_data/"; // 总持久化目录
     public static String SST_DIR = PERSIST_DIR + "ssts/";   // SSTable 存储目录
     public static  String BLOCK_META_DIR = PERSIST_DIR + "block_meta/"; // 物理块元数据目录
     public static final String SST_META_SUFFIX = ".txt";         // SSTable 元数据文件后缀
@@ -50,7 +50,7 @@ public class Constants {
     public static  String META_BLOCK_META_DIR = PERSIST_DIR + "meta_blocks/"; // 元数据区块元数据目录
     public static  String BLOCK_DIR = PERSIST_DIR + "blocks/";
 
-    public static final int MAX_ERROR = 1 * PAGE_SIZE; // 最大允许误差：3个页（96KB）
+    public static final int MAX_ERROR = 1 * PAGE_SIZE; // 最大允许误差：1个页（96KB）
     public static final Pattern USER_PATTERN = Pattern.compile("user(\\d+)");
     public static final String KEY_ADDR_FILE = "key_addr.txt";
     public static final String PAGES_DIR = "pages";

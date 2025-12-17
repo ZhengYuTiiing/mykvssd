@@ -1,0 +1,32 @@
+=== KV Workload Execution Result ===
+Workload File: .\csv2\ycsb.csv
+Storage Directory (PERSIST_DIR): ./data2/ycsb_kvssd_data/
+Execution Start Time: 2025-12-16 20:08:28
+Skipped CSV Header: op,key_str,value_str
+
+Processed 10000 operations...
+Processed 20000 operations...
+Processed 30000 operations...
+Processed 40000 operations...
+Processed 50000 operations...
+Processed 60000 operations...
+==================================================
+                 Basic Operation Stats            
+==================================================
+Total Operations: 65,536 (Read: 32993, Write: 32543)
+Elapsed Time: 43.58 seconds
+Throughput: 1503.94 operations/second
+
+--------------------------------------------------
+Read Flash Access Distribution (Times per Read):
+  0 times: 8,352
+  1 times: 0
+  2 times: 0
+  3 times: 9,099
+  4 times: 62
+  5 times: 51
+  6 times: 1,806
+  7 times: 1,220
+  8 times: 2,170
+  8+ times: 10,233
+

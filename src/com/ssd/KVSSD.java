@@ -1042,10 +1042,6 @@ public class KVSSD{
             Pair<String, String> kv = sortedMemtable.get(i);
             int kvSize = kv.first.getBytes(StandardCharsets.UTF_8).length +
                     kv.second.getBytes(StandardCharsets.UTF_8).length;
-            if(kv.first=="user350269079075"){
-                System.out.println("user350269079075 in page "+nextPageNo );
-                continue;
-            }
 
             if (pageSizeUsed > 0 && pageSizeUsed + kvSize > Constants.PAGE_SIZE) {
                 // 当前页已满，创建并尝试添加物理页
@@ -1074,16 +1070,9 @@ public class KVSSD{
         if (i < sortedMemtable.size()) {
             nextPageNo=0;
             this.memtable.addAll(pageKvs);
-            //TODO memtablef的大小改一改，说不定还会触发flush
             for(int j=i;j<sortedMemtable.size();j++){
                 this.memtable.add(sortedMemtable.get(j));
-                if(sortedMemtable.get(j).first=="user350269079075"){
-                    System.out.println("user350269079075 in memtable "+j);
-                }
             }
-
-
-
         } else if (!pageKvs.isEmpty()) {
             // 循环正常结束，处理最后一页
             String ppa = generatePPA(block.blockId);

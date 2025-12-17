@@ -1,0 +1,32 @@
+=== KV Workload Execution Result ===
+Workload File: .\csv2\w-pink.csv
+Storage Directory (PERSIST_DIR): ./data2/w-pink_mykvssd_data/
+Execution Start Time: 2025-12-16 11:10:00
+Skipped CSV Header: op,key_str,value_str
+
+Processed 10000 operations...
+Processed 20000 operations...
+Processed 30000 operations...
+Processed 40000 operations...
+Processed 50000 operations...
+Processed 60000 operations...
+==================================================
+                 Basic Operation Stats            
+==================================================
+Total Operations: 63,312 (Read: 31643, Write: 31669)
+Elapsed Time: 26976.01 seconds
+Throughput: 2.35 operations/second
+
+--------------------------------------------------
+Read Flash Access Distribution (Times per Read):
+  0 times: 8,135
+  1 times: 62
+  2 times: 42
+  3 times: 83
+  4 times: 38
+  5 times: 21
+  6 times: 68
+  7 times: 26
+  8 times: 36
+  8+ times: 23,132
+

@@ -42,14 +42,14 @@ public class Runner {
             runSingleWorkload(workloadFile, resultDir);
         }
 
-//        for (String workloadFile : args) {
-//            System.out.println("\n==================================================");
-//            System.out.println("Starting workload: " + workloadFile);
-//            System.out.println("==================================================");
-//
-//            // 运行单个workload并生成独立结果文件
-//            runSingleWorkload_MYKVSSD(workloadFile, resultDir);
-//        }
+        for (String workloadFile : args) {
+            System.out.println("\n==================================================");
+            System.out.println("Starting workload: " + workloadFile);
+            System.out.println("==================================================");
+
+            // 运行单个workload并生成独立结果文件
+            runSingleWorkload_MYKVSSD(workloadFile, resultDir);
+        }
 
         // 4. 所有workload运行完成提示
         System.out.println("\n=== All workloads executed! Results saved to: " + resultDir.getAbsolutePath() + " ===");
@@ -391,7 +391,7 @@ public class Runner {
             // 空指针防护：若获取不到统计数据，初始化空实例
             if (kvssdStats == null) {
                 kvssdStats = new MYKVSSD.Stats();
-                String warnMsg = "Warning: Failed to get stats from KVSSD6, using empty stats.";
+                String warnMsg = "Warning: Failed to get stats from MYKVSSD, using empty stats.";
                 System.err.println(warnMsg);
                 resultWriter.write(warnMsg);
                 resultWriter.newLine();
@@ -429,7 +429,13 @@ public class Runner {
             resultWriter.write(String.format("  8 times: %,d%n", kvssdStats.read8Flash));
             resultWriter.write(String.format("  8+ times: %,d%n", kvssdStats.readMoreFlash));
             resultWriter.newLine();
-
+            // 添加预测准确率统计信息
+            resultWriter.write("--------------------------------------------------");
+            resultWriter.write("Prediction Accuracy Statistics:");
+            resultWriter.write(String.format("Prediction Accuracy: %.2f%%%n", kvssdStats.getPredictionAccuracy()));
+            resultWriter.write(String.format("Predict Success: %,d%n", kvssdStats.predictSuccess));
+            resultWriter.write(String.format("Predict Failures: %,d%n", kvssdStats.predictFailures));
+            resultWriter.newLine();
             // 步骤12：控制台打印当前workload完成信息
             System.out.println("==================================================");
             System.out.printf("Workload '%s' completed successfully!%n", workloadName);
