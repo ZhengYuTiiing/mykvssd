@@ -1,0 +1,6 @@
+=== KV Workload Execution Result ===
+Workload File: .\csv3\kvssd.csv
+Storage Directory (PERSIST_DIR): ./data2/kvssd_mykvssd_data/
+Execution Start Time: 2025-12-22 16:35:59
+Skipped CSV Header: op,key_str,value_str
+

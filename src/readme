@@ -108,3 +108,90 @@ java -cp classes com.ssd.KVWorkloadRunner csv4/kvssd.csv
  java -cp classes com.ssd.NewGenerator --output csv3/crypto1.csv --ops 516222 --numKeys 645280 --readRatio 0.5 --keySize 76 --valSize 50 --keyDist uniform
  # 14. RTDATA
  java -cp classes com.ssd.NewGenerator --output csv3/rtdata.csv --ops 1766024 --numKeys 2207530 --readRatio 0.5 --keySize 24 --valSize 10 --keyDist uniform
+
+
+# 1. KVSSD（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/kvssd.csv --ops 9783 --numKeys 12229 --readRatio 0.9 --keySize 16 --valSize 4096 --keyDist uniform
+
+# 2. YCSB（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/ycsb.csv --ops 19845 --numKeys 24806 --readRatio 0.9 --keySize 20 --valSize 1000 --keyDist uniform
+
+# 3. W-PinK（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/w-pink.csv --ops 19084 --numKeys 23855 --readRatio 0.9 --keySize 32 --valSize 1024 --keyDist uniform
+
+# 4. Xbox（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/xbox.csv --ops 16214 --numKeys 20268 --readRatio 0.9 --keySize 94 --valSize 1200 --keyDist uniform
+
+# 5. ETC（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/etc.csv --ops 49957 --numKeys 62446 --readRatio 0.9 --keySize 41 --valSize 358 --keyDist uniform
+
+# 6. UDB（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/udb.csv --ops 66573 --numKeys 83216 --readRatio 0.9 --keySize 27 --valSize 128 --keyDist uniform
+
+# 7. Cache（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/cache.csv --ops 58958 --numKeys 73698 --readRatio 0.9 --keySize 42 --valSize 188 --keyDist uniform
+
+# 8. VAR（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/var.csv --ops 68402 --numKeys 85503 --readRatio 0.9 --keySize 35 --valSize 115 --keyDist uniform
+
+# 9. Crypto2（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/crypto2.csv --ops 66127 --numKeys 82659 --readRatio 0.9 --keySize 37 --valSize 110 --keyDist uniform
+
+# 10. Dedup（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/dedup.csv --ops 93442 --numKeys 116803 --readRatio 0.9 --keySize 20 --valSize 44 --keyDist uniform
+
+# 11. Cache15（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/cache15.csv --ops 81538 --numKeys 101923 --readRatio 0.9 --keySize 38 --valSize 38 --keyDist uniform
+
+# 12. ZippyDB（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/zippydb.csv --ops 74255 --numKeys 92819 --readRatio 0.9 --keySize 48 --valSize 43 --keyDist uniform
+
+# 13. Crypto1（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/crypto1.csv --ops 52987 --numKeys 66234 --readRatio 0.9 --keySize 76 --valSize 50 --keyDist uniform
+
+# 14. RTDATA（readRatio=0.9，总数据≈20MB）
+java -cp classes com.ssd.NewGenerator --output csv4/rtdata.csv --ops 168288 --numKeys 210360 --readRatio 0.9 --keySize 24 --valSize 10 --keyDist uniform
+
+
+
+# 1. KVSSD（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/kvssd.csv --ops 7337 --numKeys 9171 --readRatio 0.9 --keySize 16 --valSize 4096 --keyDist uniform
+
+# 2. YCSB（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/ycsb.csv --ops 14884 --numKeys 18605 --readRatio 0.9 --keySize 20 --valSize 1000 --keyDist uniform
+
+# 3. W-PinK（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/w-pink.csv --ops 14313 --numKeys 17891 --readRatio 0.9 --keySize 32 --valSize 1024 --keyDist uniform
+
+# 4. Xbox（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/xbox.csv --ops 12161 --numKeys 15201 --readRatio 0.9 --keySize 94 --valSize 1200 --keyDist uniform
+
+# 5. ETC（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/etc.csv --ops 37468 --numKeys 46835 --readRatio 0.9 --keySize 41 --valSize 358 --keyDist uniform
+
+# 6. UDB（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/udb.csv --ops 49930 --numKeys 62412 --readRatio 0.9 --keySize 27 --valSize 128 --keyDist uniform
+
+# 7. Cache（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/cache.csv --ops 44219 --numKeys 55273 --readRatio 0.9 --keySize 42 --valSize 188 --keyDist uniform
+
+# 8. VAR（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/var.csv --ops 51302 --numKeys 64127 --readRatio 0.9 --keySize 35 --valSize 115 --keyDist uniform
+
+# 9. Crypto2（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/crypto2.csv --ops 49595 --numKeys 61994 --readRatio 0.9 --keySize 37 --valSize 110 --keyDist uniform
+
+# 10. Dedup（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/dedup.csv --ops 70082 --numKeys 87602 --readRatio 0.9 --keySize 20 --valSize 44 --keyDist uniform
+
+# 11. Cache15（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/cache15.csv --ops 61154 --numKeys 76442 --readRatio 0.9 --keySize 38 --valSize 38 --keyDist uniform
+
+# 12. ZippyDB（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/zippydb.csv --ops 55691 --numKeys 69614 --readRatio 0.9 --keySize 48 --valSize 43 --keyDist uniform
+
+# 13. Crypto1（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/crypto1.csv --ops 39740 --numKeys 49675 --readRatio 0.9 --keySize 76 --valSize 50 --keyDist uniform
+
+# 14. RTDATA（总数据≈15MB）
+java -cp classes com.ssd.NewGenerator --output csv5/rtdata.csv --ops 126216 --numKeys 157770 --readRatio 0.9 --keySize 24 --valSize 10 --keyDist uniform

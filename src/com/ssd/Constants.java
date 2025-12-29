@@ -35,7 +35,7 @@ public class Constants {
     };
 
     // 新增：持久化路径（确保程序有权限读写）
-    public static String PERSIST_DIR = "./data2/kvssd_mykvssd_data/"; // 总持久化目录
+    public static String PERSIST_DIR = "./data_bugfix/xbox_kvssd_data/"; // 总持久化目录
     public static String SST_DIR = PERSIST_DIR + "ssts/";   // SSTable 存储目录
     public static  String BLOCK_META_DIR = PERSIST_DIR + "block_meta/"; // 物理块元数据目录
     public static final String SST_META_SUFFIX = ".txt";         // SSTable 元数据文件后缀
@@ -52,7 +52,7 @@ public class Constants {
 
     public static final int MAX_ERROR = 1 * PAGE_SIZE; // 最大允许误差：1个页（96KB）
     public static final Pattern USER_PATTERN = Pattern.compile("user(\\d+)");
-    public static final String KEY_ADDR_FILE = "key_addr.txt";
+    public static  String KEY_ADDR_FILE = PERSIST_DIR + "key_addr.txt";
     public static final String PAGES_DIR = "pages";
     public static final String ERROR_DETAIL_FILE = "error_details.txt";
     // 布隆过滤器参数（动态计算，这里仅设置目标误判率）

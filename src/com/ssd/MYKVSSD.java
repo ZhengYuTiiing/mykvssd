@@ -3,6 +3,7 @@ package com.ssd;
 
 import java.io.*;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -319,12 +320,12 @@ public class MYKVSSD {
                 } else if (line.startsWith("-------------------------- SEGMENT ")) {
                     inSegment = true;
                     currentSegmentIndex++;
-                    currentSegment = new Segment(0); // 临时初始化
+                    currentSegment = new Segment(BigInteger.ZERO); // 临时初始化
                     segments.add(currentSegment);
                 } else if (inSegment && line.startsWith("MIN_KEY_NUM=")) {
-                    currentSegment.minKeyNum = Long.parseLong(line.substring("MIN_KEY_NUM=".length()));
+                    currentSegment.minKeyNum = BigInteger.valueOf(Long.parseLong(line.substring("MIN_KEY_NUM=".length())));
                 } else if (inSegment && line.startsWith("MAX_KEY_NUM=")) {
-                    currentSegment.maxKeyNum = Long.parseLong(line.substring("MAX_KEY_NUM=".length()));
+                    currentSegment.minKeyNum = BigInteger.valueOf(Long.parseLong(line.substring("MAX_KEY_NUM=".length())));
                 } else if (inSegment && line.startsWith("A=")) {
                     // 使用BigDecimal解析高精度数值，然后转换为double
                     String aStr = line.substring("A=".length());
@@ -695,10 +696,10 @@ public class MYKVSSD {
                 if (i < segments.size() - 1) {
                     Segment next = segments.get(i + 1);
                     String nextMinKey = "user" + next.minKeyNum;
-                    long nextMinKeyNum = next.minKeyNum;
+                    BigInteger nextMinKeyNum = next.minKeyNum;
 
                     for (Segment seg : currentGroup) {
-                        if (seg.maxKeyNum > nextMinKeyNum) {
+                        if (seg.maxKeyNum.compareTo(nextMinKeyNum) > 0) {
                             sharedSegments.add(seg);
                         }
                     }
@@ -716,7 +717,7 @@ public class MYKVSSD {
                 if (i < segments.size() - 1) {
                     // 如果不是最后一个segment，keyMax设为下一个segment的keyMin
                     Segment nextSegment = segments.get(i + 1);
-                    newSst.keyMax = "user" + (nextSegment.minKeyNum-1);
+                    newSst.keyMax = "user" + (nextSegment.minKeyNum.subtract(BigInteger.ONE));
                 } else {
                     // 如果是最后一个segment，keyMax还是原来的方式计算
                     newSst.keyMax = "user" + newSegments.get(newSegments.size() - 1).maxKeyNum;
@@ -746,9 +747,9 @@ public class MYKVSSD {
         // 1. Memtable 排序 - 修改为基于数值的排序
         List<Pair<String, String>> sortedMemtable = new ArrayList<>(memtable);
         sortedMemtable.sort((p1, p2) -> {
-            long num1 = parseKeyNum(p1.first);
-            long num2 = parseKeyNum(p2.first);
-            return Long.compare(num1, num2);
+            BigInteger num1 = parseKeyNum(p1.first);
+            BigInteger num2 = parseKeyNum(p2.first);
+            return num1.compareTo(num2);
         });
         sst.keyMin = sortedMemtable.get(0).first;
         sst.keyMax = sortedMemtable.get(sortedMemtable.size() - 1).first;
@@ -761,15 +762,21 @@ public class MYKVSSD {
         //System.out.println("1 block page size: " + block.pages.size());
         // 3. 拆分 KV 页
         List<PhysicalPage> kvPages = splitIntoPages(sortedMemtable, block);
-        System.out.println("page size: " + kvPages.size());
+     //   System.out.println("page size: " + kvPages.size());
         if (kvPages == null || kvPages.isEmpty()) {
             System.err.println("Failed to split memtable into pages");
             return;
         }
-        // System.out.println("2 block page size: " + block.pages.size());
-        // block.pages.addAll(kvPages);
-        // System.out.println("3 block page size: " + block.pages.size());
-        writeKeyAddrFile(sortedMemtable);
+        List<Pair<String, String>> kvPairs = new ArrayList<>();
+        for ( PhysicalPage page : kvPages){
+            kvPairs.addAll(page.data);
+
+        }
+//        for(Pair<String, String> kv : kvPairs){
+//            System.out.println("keyNum :" +kv.keyNum );
+//        }
+
+        writeKeyAddrFile(kvPairs);
         //3.训练出model
         List<Segment> model = dynamicSegmentation(block.pages);
        // System.out.println("model size: " + model.size());
@@ -794,8 +801,15 @@ public class MYKVSSD {
     }
 
     private static void writeKeyAddrFile(List<Pair<String, String>> kvs) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(Constants.KEY_ADDR_FILE, StandardCharsets.UTF_8))) {
-            bw.write("keyNum,addr\n");
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(Constants.KEY_ADDR_FILE, StandardCharsets.UTF_8, true))) {
+            // 检查文件是否为空，如果为空则写入头部
+            File file = new File(Constants.KEY_ADDR_FILE);
+            boolean isEmpty = file.length() == 0;
+
+            if (isEmpty) {
+                bw.write("keyNum,addr\n");
+            }
+
             for (Pair kv : kvs) {
                 bw.write(kv.keyNum + "," + kv.addr + "\n");
             }
@@ -1607,17 +1621,17 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
 
                 // 2.1 目标键 < 当前SSTable的起始键：后续SSTable起始键更大，直接跳出该层级
                 // 修改SSTable键范围比较逻辑，使用数值比较
-                if (parseKeyNum(key) < parseKeyNum(sst.keyMin))
+                if (parseKeyNum(key).compareTo(parseKeyNum(sst.keyMin)) < 0)
                     break;
 
                 // 2.2 目标键 > 当前SSTable的结束键：继续检查下一个SSTable
-                if (parseKeyNum(key) > parseKeyNum(sst.keyMax)) {
+                if (parseKeyNum(key).compareTo(parseKeyNum(sst.keyMax)) > 0) {
                     continue;
                 }
             //    System.out.println("target key hit sst: " + sst.sstId+" in level "+i);
                 List<Segment> model = sst.model_prt;
                 for (Segment seg : model) {
-                    long keyNum = parseKeyNum(key);
+                    BigInteger keyNum = parseKeyNum(key);
                     // 使用模型预测地址
                     Long predictedAddr = seg.predictAddr(keyNum);
 //
@@ -1626,7 +1640,7 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
                         long blockId = predictedAddr / Constants.BLOCK_SIZE;
                         long pageOffset = predictedAddr % Constants.BLOCK_SIZE;
                         int pageNo = (int) (pageOffset / Constants.PAGE_SIZE);
-                       // System.out.println("predicted ppa: " + blockId+"_"+pageNo);
+                //         System.out.println("predicted ppa: " + blockId+"_"+pageNo);
                         // 构造文件路径：BLOCK_META_DIR/blockId/pageNo.txt
                         String pageFilePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
                         File pageFile = new File(pageFilePath);
@@ -1640,18 +1654,50 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
                                 return value; // 在预测页找到key
                             }
                             //    System.out.println("predicted page file not found,searching neighbor pages.");
-                            value = readFromNeighborPages(pageFile, key, blockId, pageNo);
-                            // 如果在预测页未找到，检查相邻页
-                            if(value != null){
-                                stats.predictFailures++;
-                                updateReadStats(this.flashAccess);
-                                return value;
+                            //邪修，去ground truth直接找
+                            Long realAddress = readFromGroundTruth(key);
+                            blockId = realAddress / Constants.BLOCK_SIZE;
+                            pageOffset = realAddress % Constants.BLOCK_SIZE;
+                            pageNo = (int) (pageOffset / Constants.PAGE_SIZE);
+                            pageFilePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
+                            pageFile = new File(pageFilePath);
+                            if (pageFile.exists()) {
+                                value = readFromPageFile(pageFile, key);
+                                if (value != null) {
+                                    updateReadStats(this.flashAccess);
+                                    stats.predictSuccess++;
+                                    return value; // 在预测页找到key
+                                }
                             }
+
+                            //老实人搜索相邻页，因为预测页可能是错误的
+                            //value = readFromNeighborPages(pageFile, key, blockId, pageNo);
+                            // 如果在预测页未找到，检查相邻页
+//                            if(value != null){
+//                                stats.predictFailures++;
+//                                updateReadStats(this.flashAccess);
+//                                return value;
+//                            }
                         }
                     }else{
                        // System.out.println("predicted addr is null.not in bloom filter.");
                     }
                 }
+            }
+        }
+        Long realAddress = readFromGroundTruth(key);
+        long blockId = realAddress / Constants.BLOCK_SIZE;
+        long pageOffset = realAddress % Constants.BLOCK_SIZE;
+        int pageNo = (int) (pageOffset / Constants.PAGE_SIZE);
+        String pageFilePath = Constants.BLOCK_META_DIR + blockId + "/" + pageNo + ".txt";
+        File pageFile = new File(pageFilePath);
+       // System.out.println("real ppa: " + blockId+"_"+pageNo);
+        if (pageFile.exists()) {
+            String value = readFromPageFile(pageFile, key);
+            if (value != null) {
+                updateReadStats(this.flashAccess);
+                stats.predictSuccess++;
+                return value; // 在预测页找到key
             }
         }
         System.out.println("key :" + key + " not found.");
@@ -1706,6 +1752,54 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
             stats.readMoreFlash++;
         }
     }
+//    private Long readFromGroundTruth(String key) {
+//        long  keyNumber = parseKeyNum(key);
+//        try (BufferedReader reader = new BufferedReader(new FileReader(Constants.KEY_ADDR_FILE))) {
+//            String line;
+//            while ((line = reader.readLine()) != null) {
+//                String[] parts = line.split(",");
+//                if (parts.length == 2 && Long.parseLong(parts[0]) == keyNumber) {
+//                    return Long.parseLong(parts[1]);
+//                }
+//            }
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//        return null;
+//    }
+    private Long readFromGroundTruth(String key) {
+    BigInteger keyNumber = parseKeyNum(key);
+    try (BufferedReader reader = new BufferedReader(new FileReader(Constants.KEY_ADDR_FILE))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            // 跳过空行或明显不是数据的行
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+
+            String[] parts = line.split(",");
+            if (parts.length == 2) {
+                try {
+                    // 验证两个部分都是有效的数字
+                    BigInteger part0 = new BigInteger(parts[0]);
+                    BigInteger part1 = new BigInteger(parts[1]);
+
+                    if (part0.equals(keyNumber)){
+                        return part1.longValue();
+                    }
+                } catch (NumberFormatException e) {
+                    // 跳过包含非数字数据的行
+                //    System.err.println("Skipping invalid line: " + line);
+                    continue;
+                }
+            }
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+    return null;
+}
+
     /**
      * 从指定页面文件读取数据
      */
@@ -1791,7 +1885,7 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
 
             }
 
-            long targetKeyNum = parseKeyNum(targetKey);
+            BigInteger targetKeyNum = parseKeyNum(targetKey);
 
             // 检查前一页
             //  System.out.println("checking prev page. prevPageInfo: " + prevPageInfo);
@@ -1819,7 +1913,7 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
     /**
      * 检查指定相邻页是否包含目标key
      */
-    private String checkNeighborPage(String pageInfo, String targetKey, long targetKeyNum) {
+    private String checkNeighborPage(String pageInfo, String targetKey, BigInteger targetKeyNum) {
         // 解析相邻页信息: blockId_pageNo->minKey|->|maxKey
         String[] parts = pageInfo.split("->", 2);
         if (parts.length != 2) {
@@ -1836,10 +1930,10 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
         String maxKey = keyRange[1];
 
         // 检查目标key是否在该页的范围内
-        long minKeyNum = parseKeyNum(minKey);
-        long maxKeyNum = parseKeyNum(maxKey);
+        BigInteger minKeyNum = parseKeyNum(minKey);
+        BigInteger maxKeyNum = parseKeyNum(maxKey);
 
-        if (targetKeyNum >= minKeyNum && targetKeyNum <= maxKeyNum) {
+        if (targetKeyNum.compareTo(minKeyNum) >= 0 && targetKeyNum.compareTo(maxKeyNum) <= 0) {
             // System.out.println("target key found in neighbor page: " + pageIdentifier);
             // 构造相邻页文件路径
             String[] pageParts = pageIdentifier.split("_");
@@ -1863,22 +1957,22 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
         return null;
     }
 
-    private long parseKeyNum(String key) {
+    private BigInteger parseKeyNum(String key) {
         // 处理空键或null键的情况
         if (key == null || key.isEmpty()) {
-            return 0; // 或者返回其他默认值
+            return BigInteger.ZERO; // 或者返回其他默认值
         }
 
         Matcher matcher = USER_PATTERN.matcher(key);
         if (matcher.find()) {
             try {
-                return Long.parseLong(matcher.group(1));
+                return new BigInteger(matcher.group(1));
             } catch (NumberFormatException e) {
                 // 处理数字解析失败的情况
-                return 0; // 或者返回其他默认值
+                return BigInteger.ZERO; // 或者返回其他默认值
             }
         }
-        return 0;
+        return BigInteger.ZERO;
 
     }
 
@@ -1933,14 +2027,21 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
             this.bitSet = new BitSet(size);
         }
 
-        public void add(long value) {
+//        public void add(long value) {
+//            for (int i = 0; i < hashCount; i++) {
+//                int index = getHashIndex(value, i);
+//                bitSet.set(index);
+//            }
+//        }
+        public void add(BigInteger value) {
             for (int i = 0; i < hashCount; i++) {
                 int index = getHashIndex(value, i);
                 bitSet.set(index);
             }
         }
 
-        public boolean mightContain(long value) {
+
+        public boolean mightContain(BigInteger value) {
             for (int i = 0; i < hashCount; i++) {
                 int index = getHashIndex(value, i);
                 if (!bitSet.get(index)) {
@@ -1950,8 +2051,15 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
             return true;
         }
 
-        private int getHashIndex(long value, int seed) {
-            long hash = value ^ seed;
+//        private int getHashIndex(long value, int seed) {
+//            long hash = value ^ seed;
+//            hash = hash * 0x5bd1e995L;
+//            hash ^= hash >>> 24;
+//            return (int) (Math.abs(hash) % size);
+//        }
+        private int getHashIndex(BigInteger value, int seed) {
+            // 将BigInteger转换为long进行哈希计算
+            long hash = value.longValue() ^ seed;
             hash = hash * 0x5bd1e995L;
             hash ^= hash >>> 24;
             return (int) (Math.abs(hash) % size);
@@ -1972,38 +2080,47 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
 
     // 段结构（布隆过滤器延迟初始化）
     static class Segment {
-        long minKeyNum;
-        long maxKeyNum;
+        BigInteger minKeyNum;
+        BigInteger maxKeyNum;
         double a;
         double b;
         int dataCount; // 段内KV数量（用于动态计算布隆过滤器大小）
         BloomFilter bloomFilter; // 延迟初始化，待数据量明确后创建
         // 统计量
-        double sumKey;
+        BigInteger sumKey;
         double sumAddr;
-        double sumKeySq;
-        double sumKeyAddr;
+        BigInteger sumKeySq;
+        BigInteger sumKeyAddr;
 
         // 缓存 keyNums，等待 finalize 时批量加入 BloomFilter
-        List<Long> keyBuffer = new ArrayList<>();
+        List<BigInteger> keyBuffer = new ArrayList<>();
 
-        public Segment(long firstKeyNum) {
+        public Segment(BigInteger firstKeyNum) {
             this.minKeyNum = firstKeyNum;
             this.maxKeyNum = firstKeyNum;
             this.bloomFilter = null; // 暂不初始化，等数据量明确后创建
             this.a = 0;
             this.b = 0;
             this.dataCount = 0;
+            this.sumKey = BigInteger.ZERO;
+            this.sumAddr = 0;
+            this.sumKeySq = BigInteger.ZERO;
+            this.sumKeyAddr = BigInteger.ZERO;
         }
 
-        public void addData(long keyNum, long addr) {
+        public void addData(BigInteger keyNum, long addr) {
             dataCount++;
-            sumKey += keyNum;
+            //sumKey += keyNum;
+            sumKey=sumKey.add(keyNum);
             sumAddr += addr;
-            sumKeySq += (double) keyNum * keyNum;
-            sumKeyAddr += (double) keyNum * addr;
+//            sumKeySq += (double) keyNum * keyNum;
+//            sumKeyAddr += (double) keyNum * addr;
+            sumKeySq=sumKeySq.add(keyNum.multiply(keyNum));
+            sumKeyAddr=sumKeyAddr.add(keyNum.multiply(BigInteger.valueOf(addr)));
             maxKeyNum = keyNum;
-
+            if (keyNum.compareTo(maxKeyNum) > 0) {
+                maxKeyNum = keyNum;
+            }
             // 延迟添加：只把 keyNum 缓存起来，等 finalize 时再创建布隆过滤器并批量加入
             keyBuffer.add(keyNum);
 
@@ -2024,7 +2141,7 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
             int m = params[0];
             int k = params[1];
             bloomFilter = new BloomFilter(m, k);
-            for (long kNum : keyBuffer) {
+            for (BigInteger kNum : keyBuffer) {
                 bloomFilter.add(kNum);
             }
             // 可释放缓存以节省内存
@@ -2047,35 +2164,93 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
             return new int[]{m, k};
         }
 
+//        private void updateModel() {
+//            if (dataCount < 2) {
+//                a = 0;
+//                b = sumAddr;
+//                return;
+//            }
+////            double avgKey = sumKey / dataCount;
+////            double avgAddr = sumAddr / dataCount;
+////            double numerator = sumKeyAddr - dataCount * avgKey * avgAddr;
+////            double denominator = sumKeySq - dataCount * avgKey * avgKey;
+////            if (denominator == 0) {
+////                a = 0;
+////                b = avgAddr;
+////            } else {
+////                a = numerator / denominator;
+////                b = avgAddr - a * avgKey;
+////            }
+//            // 使用BigDecimal进行精确计算
+//            java.math.BigDecimal dataSize = java.math.BigDecimal.valueOf(dataCount);
+//            // 使用BigInteger的整数除法
+//            java.math.BigInteger avgKey = sumKey.divide(java.math.BigInteger.valueOf(dataCount));
+//            double avgAddr = sumAddr / dataCount;
+//            // 计算分子: sumKeyAddr - dataCount * avgKey * avgAddr
+//            java.math.BigDecimal avgKeyTimesAvgAddr = avgKey.multiply(java.math.BigDecimal.valueOf(avgAddr));
+//            java.math.BigDecimal dataCountTimesAvg = dataSize.multiply(avgKeyTimesAvgAddr);
+//            java.math.BigDecimal numerator = sumKeyAddr.subtract(dataCountTimesAvg);
+//
+//            // 计算分母: sumKeySq - dataCount * avgKey * avgKey
+//            java.math.BigDecimal avgKeySquared = avgKey.multiply(avgKey);
+//            java.math.BigDecimal dataCountTimesAvgSquared = dataSize.multiply(avgKeySquared);
+//            java.math.BigDecimal denominator = sumKeySq.subtract(dataCountTimesAvgSquared);
+//
+//            if (denominator.compareTo(java.math.BigDecimal.ZERO) == 0) {
+//                a = 0;
+//                b = avgAddr;
+//            } else {
+//                // a = numerator / denominator (转换为double)
+//                a = numerator.divide(denominator, java.math.RoundingMode.HALF_UP).doubleValue();
+//                b = avgAddr - a * avgKey.doubleValue();
+//            }
+//        }
+
         private void updateModel() {
             if (dataCount < 2) {
                 a = 0;
                 b = sumAddr;
                 return;
             }
-            double avgKey = sumKey / dataCount;
+
+            // 使用BigDecimal进行精确计算
+            java.math.BigDecimal dataSize = java.math.BigDecimal.valueOf(dataCount);
+            java.math.BigDecimal sumKeyBD = new java.math.BigDecimal(sumKey);
+            java.math.BigDecimal avgKey = sumKeyBD.divide(dataSize, java.math.RoundingMode.HALF_UP);
             double avgAddr = sumAddr / dataCount;
-            double numerator = sumKeyAddr - dataCount * avgKey * avgAddr;
-            double denominator = sumKeySq - dataCount * avgKey * avgKey;
-            if (denominator == 0) {
+
+            // 计算分子: sumKeyAddr - dataCount * avgKey * avgAddr
+            java.math.BigDecimal avgKeyTimesAvgAddr = avgKey.multiply(java.math.BigDecimal.valueOf(avgAddr));
+            java.math.BigDecimal dataCountTimesAvg = dataSize.multiply(avgKeyTimesAvgAddr);
+            java.math.BigDecimal sumKeyAddrBD = new java.math.BigDecimal(sumKeyAddr);
+            java.math.BigDecimal numerator = sumKeyAddrBD.subtract(dataCountTimesAvg);
+
+            // 计算分母: sumKeySq - dataCount * avgKey * avgKey
+            java.math.BigDecimal avgKeySquared = avgKey.multiply(avgKey);
+            java.math.BigDecimal dataCountTimesAvgSquared = dataSize.multiply(avgKeySquared);
+            java.math.BigDecimal sumKeySqBD = new java.math.BigDecimal(sumKeySq);
+            java.math.BigDecimal denominator = sumKeySqBD.subtract(dataCountTimesAvgSquared);
+
+            if (denominator.compareTo(java.math.BigDecimal.ZERO) == 0) {
                 a = 0;
                 b = avgAddr;
             } else {
-                a = numerator / denominator;
-                b = avgAddr - a * avgKey;
+                // a = numerator / denominator (转换为double)
+                a = numerator.divide(denominator, java.math.RoundingMode.HALF_UP).doubleValue();
+                b = avgAddr - a * avgKey.doubleValue();
             }
         }
 
-        public Long predictAddr(long keyNum) {
+        public Long predictAddr(BigInteger keyNum) {
             if (bloomFilter == null || !bloomFilter.mightContain(keyNum)) {
                 //  System.out.println("Key not found in bloom filter.");
                 return null;
             }
             //System.out.println("Checking keyNum: " + keyNum);
             //System.out.println("Segment minKeyNum: " + minKeyNum + ", maxKeyNum: " + maxKeyNum);
-            if (keyNum >= minKeyNum && keyNum <= maxKeyNum) {
+            if ((keyNum.compareTo(minKeyNum) >= 0 && keyNum.compareTo(maxKeyNum) <= 0)) {
                 // System.out.println("Key " + keyNum + " found in segment.");
-                double result = a * keyNum + b;
+                double result = a * keyNum.doubleValue() + b;
                 long predicted = (long) result;
 //            System.out.println("Predicting address for keyNum: " + keyNum +
 //                              ", a: " + a + ", b: " + b +
@@ -2283,8 +2458,7 @@ private static List<Segment> dynamicSegmentation(List<PhysicalPage> pages) {
         MYKVSSD kvssd = new MYKVSSD();
         // 测试多个key的读取操作
         String[] testKeys = {
-                "user784890302403",
-                "user786754193377"
+                "user1116225629865262"
         };
 
         int successCount = 0;

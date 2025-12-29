@@ -1,0 +1,31 @@
+=== KV Workload Execution Result ===
+Workload File: .\csv3\xbox.csv
+Storage Directory (PERSIST_DIR): ./data2/xbox_kvssd_data/
+Execution Start Time: 2025-12-24 21:07:51
+Skipped CSV Header: op,key_str,value_str
+
+Processed 10000 operations...
+Processed 20000 operations...
+Processed 30000 operations...
+Processed 40000 operations...
+Processed 50000 operations...
+==================================================
+                 Basic Operation Stats            
+==================================================
+Total Operations: 51,704 (Read: 25852, Write: 25852)
+Elapsed Time: 35.90 seconds
+Throughput: 1440.36 operations/second
+
+--------------------------------------------------
+Read Flash Access Distribution (Times per Read):
+  0 times: 3,509
+  1 times: 0
+  2 times: 0
+  3 times: 3,814
+  4 times: 0
+  5 times: 0
+  6 times: 1
+  7 times: 5
+  8 times: 32
+  8+ times: 18,491
+

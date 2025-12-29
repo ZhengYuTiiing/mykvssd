@@ -1,6 +1,7 @@
 package com.ssd;
 
 import java.io.*;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
  * 支持持久化的 KVSSD 模拟器（基于 LSM 树），使用明文格式存储数据
  */
 public class KVSSD{
+    private static final Pattern USER_PATTERN = Pattern.compile("user(\\d+)");
     // 内存数据结构（需与磁盘同步）
     private final List<Pair<String, String>> memtable;
     private final Queue<List<Pair<String, String>>> immutableMemtables;
@@ -996,7 +998,24 @@ public class KVSSD{
 //        return sst;
 //    }
 // 假设 Pair, SSTable, PhysicalBlock, PhysicalPage, Constants 等类已在别处定义。
+    private BigInteger parseKeyNum(String key) {
+        // 处理空键或null键的情况
+        if (key == null || key.isEmpty()) {
+            return BigInteger.ZERO; // 或者返回其他默认值
+        }
 
+        Matcher matcher = USER_PATTERN.matcher(key);
+        if (matcher.find()) {
+            try {
+                return new BigInteger(matcher.group(1));
+            } catch (NumberFormatException e) {
+                // 处理数字解析失败的情况
+                return BigInteger.ZERO; // 或者返回其他默认值
+            }
+        }
+        return BigInteger.ZERO;
+
+    }
     /**
      * 将 Memtable 写入 SSTable，并处理一个 Block 写满的情况。
      * 当一个 Block（例如128页）被写满时，此方法会停止向当前 SSTable 添加数据。
@@ -1013,22 +1032,26 @@ public class KVSSD{
 
         // 1. 对 Memtable 进行排序
         List<Pair<String, String>> sortedMemtable = new ArrayList<>(memtable);
-        sortedMemtable.sort(Comparator.comparing(p -> p.first));
-
+       // sortedMemtable.sort(Comparator.comparing(p -> p.first));
+        sortedMemtable.sort((p1, p2) -> {
+            BigInteger num1 = parseKeyNum(p1.first);
+            BigInteger num2 = parseKeyNum(p2.first);
+            return num1.compareTo(num2);
+        });
         for (Pair<String, String> kv : sortedMemtable) {
             if(kv.first.equals("user350269079075")){
                 System.out.println("user350269079075 in sortedMemtable "+kv);
             }
         }
         // 清空原始 memtable，准备接收任何处理后剩余的 KV
-        memtable.clear();
+        //memtable.clear();
 
         // 2. 分配物理块
         PhysicalBlock block = allocateBlock(level);
         if (block == null) {
             System.out.println("分配块失败。所有 KV 将返回到 memtable。");
             // 无法分配块，所有数据都算作剩余数据
-            memtable.addAll(sortedMemtable);
+            //memtable.addAll(sortedMemtable);
             return null;
         }
 
@@ -1051,29 +1074,32 @@ public class KVSSD{
                 page.updateKeyRange();
 
                 int pageNo = Integer.parseInt(ppa.split("_")[1]);
-                if (block.addPage(pageNo, page)) {
-                    kvPages.add(page);
-                    stats.totalFlashWrites += Constants.PAGE_SIZE;
-                    pageKvs.clear();
-                    pageSizeUsed = 0;
-                } else {
-                    // Block 已满，无法添加新页。中断循环。
+                if(!pageKvs.isEmpty()){
+                    if (block.addPage(pageNo, page)) {
+                        kvPages.add(page);
+                        stats.totalFlashWrites += Constants.PAGE_SIZE;
+                    }
+                }
+                if (block.isFull()) {
                     System.out.println("Block 已满。停止写入 SSTable。");
+                    synchronized (this.memtable) {
+                        for (int j = i; j < sortedMemtable.size(); j++) {
+                            Pair<String, String> remainingKv = sortedMemtable.get(j);
+                            this.memtable.removeIf(existingKv -> existingKv.first.equals(remainingKv.first));
+                            this.memtable.add(remainingKv);
+                        }
+                    }
                     break;
                 }
+                pageKvs.clear();
+                pageSizeUsed = 0;
             }
             pageKvs.add(kv);
             pageSizeUsed += kvSize;
         }
 
         // 4. 循环结束后的处理
-        if (i < sortedMemtable.size()) {
-            nextPageNo=0;
-            this.memtable.addAll(pageKvs);
-            for(int j=i;j<sortedMemtable.size();j++){
-                this.memtable.add(sortedMemtable.get(j));
-            }
-        } else if (!pageKvs.isEmpty()) {
+            if (!block.isFull()&&!pageKvs.isEmpty()) {
             // 循环正常结束，处理最后一页
             String ppa = generatePPA(block.blockId);
             PhysicalPage page = new PhysicalPage(ppa);
@@ -1094,12 +1120,12 @@ public class KVSSD{
         }
 
         // 如果没有页面被写入，说明SSTable为空，这是一个无效操作
-        if (kvPages.isEmpty()) {
-            System.err.println("没有任何页被写入 SSTable。中止创建。");
-            block.allocated = false; // 归还 block (需要实现具体的归还逻辑)
-            // metaFreeBlocks.add(block.blockId);
-            return null;
-        }
+//        if (kvPages.isEmpty()) {
+//            System.err.println("没有任何页被写入 SSTable。中止创建。");
+//            block.allocated = false; // 归还 block (需要实现具体的归还逻辑)
+//            // metaFreeBlocks.add(block.blockId);
+//            return null;
+//        }
 
         sst.kvpairSize = sortedMemtable.size() - memtable.size(); // 实际写入的KV数量
 
@@ -2118,30 +2144,16 @@ public class KVSSD{
      * @param forceFlush true=强制刷盘（不管当前大小），false=仅当大小超限时刷盘
      */
     private void flushMemtableIfNeeded(boolean forceFlush) {
-        synchronized (this) {
-            int currentSize = memtable.stream()
-                    .mapToInt(this::calculateKvSize)
-                    .sum();
-
-            // 触发条件：要么强制刷盘，要么大小超上限
-            if (forceFlush || currentSize >= Constants.MAX_MEMTABLE_SIZE) {
+            if (forceFlush) {
                 if (memtable.isEmpty()) {
                     System.out.println("Memtable 为空，无需刷盘");
                     return;
                 }
 
-                System.out.println("触发 Memtable 刷盘（当前大小：" + currentSize + "字节，上限：" + Constants.MAX_MEMTABLE_SIZE + "字节）");
+               // System.out.println("触发 Memtable 刷盘（当前大小：" + currentSize + "字节，上限：" + Constants.MAX_MEMTABLE_SIZE + "字节）");
                 // 转为不可变 Memtable 并清空当前 Memtable
                 immutableMemtables.add(new ArrayList<>(memtable));
                 memtable.clear();
-
-                // 清空持久化的 Memtable 文件（原有逻辑保留）
-                try {
-                    new FileWriter(Constants.MEMTABLE_FILE, false).close();
-                } catch (IOException e) {
-                    System.err.println("Failed to clear persisted memtable: " + e.getMessage());
-                }
-
                 // 刷盘所有不可变 Memtable（原有逻辑保留）
                 while (!immutableMemtables.isEmpty()) {
                     List<Pair<String, String>> immMem = immutableMemtables.poll();
@@ -2149,7 +2161,6 @@ public class KVSSD{
                     checkLevelCompaction(0);
                 }
             }
-        }
     }
 
     /**
@@ -2188,20 +2199,6 @@ public class KVSSD{
             memtable.removeIf(kv -> kv.first.equals(key));
             memtable.add(new Pair<>(key, value));
         }
-
-
-        synchronized (memtable) {
-            // 先删除旧键（避免重复）
-            memtable.removeIf(kv -> kv.first.equals(key));
-            memtable.add(new Pair<>(key, value));
-        }
-        stats.writeCount++;
-        checkMemtableFull();
-        // 更新写入放大
-        stats.writeAmplification = stats.totalFlashWrites > 0
-                ? (double) stats.totalFlashWrites / (stats.writeCount * (key.getBytes(StandardCharsets.UTF_8).length +
-                value.getBytes(StandardCharsets.UTF_8).length))
-                : 0;
     }
 
 
@@ -2232,7 +2229,7 @@ public class KVSSD{
 
         // 3. 查 LSM 树（SSTable）
         for (int i=0;i<lsmLevels.size();i++) {
-          //   System.out.println("in level:"+i);
+            //   System.out.println("in level:"+i);
             List<SSTable> levelSsts =lsmLevels.get(i);
             if (levelSsts == null || levelSsts.isEmpty()) {
                 continue; // 跳过空层级
@@ -2242,7 +2239,7 @@ public class KVSSD{
             boolean levelHasPotential = false; // 标记当前层级是否可能包含目标键
             for (int j=0;j<levelSsts.size();j++) {
                 SSTable sst = levelSsts.get(j);
-               // System.out.println("level " + i + " 's  sstable!");
+                // System.out.println("level " + i + " 's  sstable!");
                 // 2.1 目标键 < 当前SSTable的起始键：后续SSTable起始键更大，直接跳出该层级
                 if (key.compareTo(sst.keyRange.first) < 0) {
                     //  System.out.println("skip this level");
@@ -2256,7 +2253,7 @@ public class KVSSD{
                 if((key.compareTo(sst.keyRange.first) >= 0 && key.compareTo(sst.keyRange.second) <0)||(key.compareTo(sst.keyRange.first) >= 0 && key.compareTo(sst.keyRange.second) <=0 && j==levelSsts.size()-1)){
                     // System.out.println("真的开始读文件了");
                     // 2.3 目标键在当前SSTable的键范围内：开始查询该SSTable
-                   // System.out.println("hit this sst:"+sst.sstId);
+                    // System.out.println("hit this sst:"+sst.sstId);
                     levelHasPotential = true;
                     flashAccess++; // 1. 访问SSTable的Meta Page（闪存访问：读取SSTable元数据）
                     stats.totalFlashReads++;
@@ -2325,7 +2322,7 @@ public class KVSSD{
                         if(key.compareTo(pageRange.first)>=0 && key.compareTo(pageRange.second)<=0){
                             flashAccess++; // 1. 访问SSTable的Meta Page（闪存访问：读取SSTable元数据）
                             stats.totalFlashReads++;
-                           // System.out.println("physical ppa:"+kvPagePpa+"hit!");
+                            // System.out.println("physical ppa:"+kvPagePpa+"hit!");
                             // 3.3 目标键在当前Page键范围内：记录目标Page信息
                             targetKvPagePpas.add(kvPagePpa);
                             // targetPageRange = pageRange;

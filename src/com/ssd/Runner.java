@@ -11,7 +11,7 @@ public class Runner {
     // 结果文件统一存储目录
     private static final String RESULT_DIR = "kv_workload_results/";
     // 存储目录基础路径：所有workload的存储目录基于此路径拼接
-    private static final String BASE_PERSIST_DIR = "./data2/";
+    private static final String BASE_PERSIST_DIR = "./data_bugfix/";
 
     public static void main(String[] args) {
         // 1. 参数校验：确保传入至少1个CSV workload路径
@@ -69,6 +69,13 @@ public class Runner {
         // 步骤3：修改Constants类的PERSIST_DIR静态变量（核心：切换存储目录）
         Constants.PERSIST_DIR = dynamicPersistDir;
         System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+        System.out.println("Updated Constants.PERSIST_DIR to: " + Constants.PERSIST_DIR);
+
         // 修改 PERSIST_DIR 后，需要重新计算所有依赖它的路径
         Constants.SST_DIR = Constants.PERSIST_DIR + "ssts/";
         Constants.BLOCK_META_DIR = Constants.PERSIST_DIR + "block_meta/";
@@ -78,7 +85,7 @@ public class Runner {
         Constants.MODEL_DIR = Constants.PERSIST_DIR + "models/";
         Constants.META_BLOCK_META_DIR = Constants.PERSIST_DIR + "meta_blocks/";
         Constants.BLOCK_DIR = Constants.PERSIST_DIR + "blocks/";
-
+        Constants.KEY_ADDR_FILE = Constants.PERSIST_DIR + "key_addr.txt";
         // 步骤4：自动创建存储目录（避免路径不存在导致IO异常）
         File persistDirFile = new File(dynamicPersistDir);
         if (!persistDirFile.exists()) {
@@ -281,7 +288,7 @@ public class Runner {
         Constants.MODEL_DIR = Constants.PERSIST_DIR + "models/";
         Constants.META_BLOCK_META_DIR = Constants.PERSIST_DIR + "meta_blocks/";
         Constants.BLOCK_DIR = Constants.PERSIST_DIR + "blocks/";
-
+        Constants.KEY_ADDR_FILE = Constants.PERSIST_DIR + "key_addr.txt";
         // 步骤4：自动创建存储目录（避免路径不存在导致IO异常）
         File persistDirFile = new File(dynamicPersistDir);
         if (!persistDirFile.exists()) {
